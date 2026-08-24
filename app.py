@@ -3,6 +3,8 @@ import os
 from dotenv import load_dotenv
 from crewai import LLM, Agent, Task, Crew, Process
 
+from tools.financial_data_tool import FinancialDataTool
+from tools.market_data_tool import MarketDataTool
 
 # ============================================================
 # 1. ENVIRONMENT CONFIGURATION
@@ -31,7 +33,15 @@ llm = LLM(
 
 
 # ============================================================
-# 3. FINANCIAL RESEARCH ANALYST
+# 3. INITIALIZE TOOLS
+# ============================================================
+
+financial_data_tool = FinancialDataTool()
+market_data_tool = MarketDataTool()
+
+
+# ============================================================
+# 4. FINANCIAL RESEARCH ANALYST
 # ============================================================
 
 financial_analyst = Agent(
@@ -39,65 +49,122 @@ financial_analyst = Agent(
 
     goal=(
         "Analyze a company's financial performance, business fundamentals, "
-        "growth trends, profitability, and overall financial health using "
-        "reliable and relevant financial information."
+        "growth trends, profitability, valuation, and overall financial "
+        "health using verified data retrieved through available tools."
     ),
 
     backstory=(
-        "You are an experienced financial research analyst with 7 years of "
-        "experience analyzing publicly traded companies. You specialize in "
-        "understanding financial statements, revenue and profit trends, "
-        "business fundamentals, growth metrics, and financial risks. "
-        "You provide objective, evidence-based analysis and clearly "
-        "distinguish facts from assumptions."
+        "You are an experienced financial research analyst with 7 years "
+        "of experience analyzing publicly traded companies.\n\n"
+
+        "You specialize in financial statements, market data, "
+        "profitability, valuation, growth metrics, and financial risk.\n\n"
+
+        "IMPORTANT RULES:\n"
+        "1. Use tools before making claims about financial numbers.\n"
+        "2. Never invent missing financial data.\n"
+        "3. Never infer cash, debt, or net cash from incomplete data.\n"
+        "4. Never create dates that were not retrieved from a tool.\n"
+        "5. Clearly distinguish retrieved facts from interpretation.\n"
+        "6. If data is unavailable, explicitly report it as unavailable.\n"
+        "7. Do not provide personalized investment advice."
     ),
 
+    tools=[
+        financial_data_tool,
+        market_data_tool
+    ],
+
     llm=llm,
+
     verbose=True,
+
     allow_delegation=False
 )
 
 
 # ============================================================
-# 4. FINANCIAL ANALYSIS TASK
+# 5. FINANCIAL ANALYSIS TASK
 # ============================================================
 
 financial_analysis_task = Task(
     description=(
         "Perform a fundamental financial analysis of {company}.\n\n"
 
-        "Analyze the company's:\n"
+        "First identify the correct stock ticker.\n\n"
+
+        "Then retrieve the required information using the available "
+        "financial and market data tools.\n\n"
+
+        "Use the tools to analyze:\n"
+        "- Current market price\n"
+        "- Market capitalization\n"
+        "- Historical price performance\n"
+        "- Revenue\n"
         "- Revenue growth\n"
         "- Profitability\n"
-        "- Earnings performance\n"
+        "- Earnings\n"
         "- Cash flow\n"
-        "- Debt levels\n"
-        "- Business growth\n"
+        "- Debt\n"
+        "- Valuation\n"
         "- Overall financial health\n\n"
 
-        "Identify the most important positive and negative financial "
-        "factors.\n\n"
+        "DATA INTEGRITY RULES:\n\n"
 
-        "Do not make unsupported claims. Clearly distinguish between "
-        "known facts, assumptions, and areas where information is "
-        "unavailable."
+        "1. Never invent financial numbers.\n"
+
+        "2. Never use your pretrained knowledge as a substitute "
+        "for retrieved financial data when the tool can provide it.\n"
+
+        "3. If a financial statement is empty or unavailable, "
+        "report the metric as unavailable.\n"
+
+        "4. Never calculate net cash, debt, profitability, margins, "
+        "or other balance-sheet metrics from incomplete data.\n"
+
+        "5. Do not infer balance-sheet values from Enterprise Value "
+        "and Market Capitalization alone.\n"
+
+        "6. Do not invent the report date. Use the actual retrieved "
+        "data period/date when available.\n"
+
+        "7. Every important numerical claim must be identifiable "
+        "as retrieved data or a calculation based on retrieved data.\n"
+
+        "8. Clearly separate:\n"
+        "   - Retrieved Facts\n"
+        "   - Calculated Metrics\n"
+        "   - Analyst Interpretation\n"
+        "   - Missing Information\n\n"
+
+        "9. Do not provide personalized investment advice."
     ),
 
     expected_output=(
-        "A structured financial analysis containing:\n\n"
+        "A professional financial research report containing:\n\n"
 
         "1. Company Overview\n"
-        "2. Revenue and Growth Analysis\n"
-        "3. Profitability Analysis\n"
-        "4. Earnings Performance\n"
-        "5. Cash Flow Analysis\n"
-        "6. Debt and Financial Stability\n"
-        "7. Key Financial Strengths\n"
-        "8. Key Financial Weaknesses\n"
-        "9. Important Financial Metrics\n"
-        "10. Overall Financial Health Assessment\n\n"
+        "2. Data Sources\n"
+        "3. Data Retrieval Date\n"
+        "4. Current Market Snapshot\n"
+        "5. Historical Market Performance\n"
+        "6. Revenue and Growth Analysis\n"
+        "7. Profitability Analysis\n"
+        "8. Earnings Analysis\n"
+        "9. Cash Flow Analysis\n"
+        "10. Debt and Financial Stability\n"
+        "11. Valuation Analysis\n"
+        "12. Key Financial Strengths\n"
+        "13. Key Financial Weaknesses\n"
+        "14. Important Financial Metrics\n"
+        "15. Retrieved Facts\n"
+        "16. Calculated Metrics\n"
+        "17. Analyst Interpretation\n"
+        "18. Missing or Unavailable Information\n"
+        "19. Overall Financial Health Assessment\n\n"
 
-        "The analysis should be factual, balanced, and easy to understand."
+        "The report must clearly distinguish retrieved data from "
+        "analysis and calculations."
     ),
 
     agent=financial_analyst
@@ -105,7 +172,7 @@ financial_analysis_task = Task(
 
 
 # ============================================================
-# 5. CREW CONFIGURATION
+# 6. CREW CONFIGURATION
 # ============================================================
 
 team = Crew(
@@ -124,7 +191,7 @@ team = Crew(
 
 
 # ============================================================
-# 6. RUN THE CREW
+# 7. RUN THE CREW
 # ============================================================
 
 if __name__ == "__main__":
@@ -137,6 +204,7 @@ if __name__ == "__main__":
 
     print(f"\nAnalyzing: {company}")
     print("Research type: Fundamental Financial Analysis")
+    print("Data source: Yahoo Finance via yfinance")
     print("\nStarting analysis...\n")
 
     result = team.kickoff(
@@ -146,7 +214,7 @@ if __name__ == "__main__":
     )
 
     # ========================================================
-    # 7. DISPLAY RESULT
+    # 8. DISPLAY RESULT
     # ========================================================
 
     print("\n" + "=" * 70)
