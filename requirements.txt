@@ -1,3 +1,5 @@
-crewAI
+crewai
 python-dotenv
 google-genai
+yfinance
+pandas

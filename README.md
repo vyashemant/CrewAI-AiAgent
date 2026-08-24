@@ -175,7 +175,7 @@ ai-investment-research/
 ├── .env
 ├── .gitignore
 ├── requirements.txt
-└── main.py
+└── app.py
 ```
 
 As the project grows, the structure can evolve into:
