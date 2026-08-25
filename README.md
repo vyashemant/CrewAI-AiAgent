@@ -1,236 +1,244 @@
 # AI Investment Research Team
 
-A multi-agent investment research system built with **CrewAI** and **Google Gemini**.
+An AI investment research project built with **CrewAI**, **Google Gemini**, **yfinance**, and the **SEC EDGAR XBRL Company Facts API**.
 
-The project is designed to analyze publicly traded companies by dividing investment research into specialized roles such as financial analysis, market research, valuation, risk analysis, and final investment synthesis.
+The current system implements a single Financial Research Analyst. Python retrieves and validates financial data before the CrewAI task begins, then Gemini interprets that validated context to produce a financial research report.
 
-> **Current status:** Foundation / Phase 1. The project currently implements the Financial Research Analyst agent. Additional agents and real-time data tools are planned.
+> Current status: Phase 2 complete. Phase 3 multi-agent research roles are planned but not implemented.
 
 ---
 
-## 🎯 Project Goal
+## Project Goal
 
-The goal is to build a portfolio-quality GenAI application that demonstrates how multiple specialized AI agents can collaborate to produce a structured investment research report.
+The long-term goal is to build an AI Investment Research Team that can analyze public companies through specialized research roles and produce a final investment research report.
 
-Instead of asking one LLM to perform every task, the system will eventually divide the research workflow across specialized agents:
+Planned long-term architecture:
 
 ```text
-                         User
-                           │
-                           ▼
-                  Investment Research
-                         Manager
-                           │
-          ┌────────────────┼────────────────┐
-          ▼                ▼                ▼
-     Financial         Market &          Valuation
-      Analyst           News Analyst       Analyst
-          │                │                │
-          └────────────────┼────────────────┘
-                           ▼
-                      Risk Analyst
-                           │
-                           ▼
-                 Investment Strategist
-                           │
-                           ▼
-                 Final Research Report
+User
+  |
+  v
+Research Manager
+  |
+  v
+Financial Analyst
+Market / News Analyst
+Valuation Analyst
+Risk Analyst
+Investment Strategist
+  |
+  v
+Final Investment Research Report
 ```
+
+The project is not yet a multi-agent system. The current implementation focuses on reliable financial data retrieval, validation, deterministic metric calculation, and single-agent interpretation.
 
 ---
 
-## 🚧 Current Implementation
+## Current Architecture
 
-The current version contains one working agent:
+```text
+Yahoo Finance
+    |
+    v
+Market Data Tool
+
+SEC EDGAR
+    |
+    v
+SEC Financial Data Tool
+    |
+    v
+Normalized Financial Data
+    |
+    v
+Financial Metrics Engine
+    |
+    v
+Validated Research Context
+    |
+    v
+Financial Research Analyst
+    |
+    v
+Final Report
+```
+
+The design principle is:
+
+```text
+RETRIEVAL -> VALIDATION -> CALCULATION -> REASONING
+```
+
+- Yahoo Finance is used for current market data.
+- SEC EDGAR is the primary source for fundamental financial statements.
+- Python validates and normalizes financial data.
+- Python calculates deterministic financial metrics.
+- CrewAI/Gemini interprets the validated data.
+- Missing data is reported as unavailable rather than invented.
+
+---
+
+## Current Implementation
 
 ### Financial Research Analyst
 
-The agent is responsible for:
+The Financial Research Analyst produces a structured financial research report covering:
 
 - Company overview
-- Revenue and growth analysis
+- Data sources
+- Market data
+- Financial reporting period
+- Revenue analysis
 - Profitability analysis
-- Earnings performance
+- Earnings analysis
 - Cash-flow analysis
+- Balance-sheet analysis
 - Debt and financial stability
-- Financial strengths
-- Financial weaknesses
-- Important financial metrics
+- Valuation analysis
+- Calculated financial metrics
+- Key financial strengths
+- Key financial weaknesses
+- Missing or unavailable information
 - Overall financial health assessment
 
-The current implementation uses CrewAI's sequential process and accepts a company name as an input.
+All external financial data is retrieved by the Python orchestration layer before CrewAI kickoff. The analyst receives the pre-retrieved verified research context and is responsible for interpretation, explanation, and financial reasoning.
 
-Example:
+---
 
-```python
-result = team.kickoff(
-    inputs={
-        "company": "Apple Inc."
-    }
-)
+## Data Sources
+
+### Yahoo Finance
+
+Yahoo Finance data is retrieved through `yfinance` and is used for current market information such as:
+
+- Current stock price
+- Previous close
+- Day high and low
+- 52-week high and low
+- Volume and average volume
+- Market capitalization
+- Beta
+- Dividend yield
+- Recent historical prices
+
+### SEC EDGAR
+
+SEC EDGAR data is retrieved through the SEC XBRL Company Facts API and is used for official financial statement information such as:
+
+- Revenue
+- Gross profit
+- Operating income
+- Net income
+- Assets
+- Liabilities
+- Stockholders' equity
+- Cash and cash equivalents
+- Current debt
+- Non-current debt
+- Total debt
+- Operating cash flow
+- Capital expenditure
+- Reporting metadata including CIK, form, fiscal year, filing date, and reporting period
+
+The SEC tool preserves raw SEC evidence and also creates normalized financial data for deterministic metric calculation.
+
+---
+
+## Tools
+
+### `tools/market_data_tool.py`
+
+Retrieves current and recent historical market data from Yahoo Finance through `yfinance`.
+
+### `tools/sec_financial_tool.py`
+
+Retrieves official SEC EDGAR company facts, extracts the latest annual financial statement values, preserves raw evidence, creates normalized financial data, validates debt components, and preserves reporting metadata.
+
+### `tools/financial_metrics.py`
+
+Contains the deterministic Financial Metrics Engine. It calculates financial metrics only when all required inputs are available. If required data is missing, the metric returns `None` and is reported as unavailable.
+
+Calculated metrics include:
+
+- Revenue growth
+- Net income growth
+- Gross margin
+- Operating margin
+- Net profit margin
+- Free cash flow
+- FCF margin
+- Debt-to-equity
+- Net cash
+- Return on equity
+- Return on assets
+- Asset turnover
+- Equity multiplier
+
+### `tools/financial_data_tool.py`
+
+Retrieves additional Yahoo Finance fundamental data, including financial statements and valuation metrics. The current Phase 2 flow primarily relies on SEC EDGAR for official fundamental financial statement data.
+
+---
+
+## Project Structure
+
+```text
+CrewAI/
+|-- .vscode/
+|-- tools/
+|   |-- __init__.py
+|   |-- financial_data_tool.py
+|   |-- financial_metrics.py
+|   |-- market_data_tool.py
+|   `-- sec_financial_tool.py
+|-- .env
+|-- .gitignore
+|-- app.py
+|-- README.md
+|-- requirements.txt
+|-- test_financial_metrics.py
+|-- test_financial_tool.py
+|-- test_market_tool.py
+`-- test_sec_tool.py
 ```
 
 ---
 
-## 🧠 Planned Multi-Agent Architecture
-
-The complete system is planned around five specialized agents.
-
-### 1. Financial Research Analyst
-
-Analyzes:
-
-- Revenue
-- Earnings
-- Profitability
-- Cash flow
-- Debt
-- Financial health
-- Financial trends
-
-### 2. Market & News Research Analyst
-
-Analyzes:
-
-- Recent company news
-- Industry trends
-- Competitors
-- Regulatory developments
-- Market sentiment
-- Positive and negative catalysts
-
-### 3. Equity Valuation Analyst
-
-Analyzes:
-
-- P/E
-- P/S
-- EV/EBITDA
-- Price-to-Free-Cash-Flow
-- Historical valuation
-- Peer valuation
-- Growth versus valuation
-
-### 4. Investment Risk Analyst
-
-Analyzes:
-
-- Financial risks
-- Operational risks
-- Competitive risks
-- Regulatory risks
-- Technology risks
-- Macroeconomic risks
-- Downside scenarios
-
-### 5. Senior Investment Research Strategist
-
-Synthesizes the outputs from the other agents and produces:
-
-- Executive summary
-- Bull case
-- Bear case
-- Financial assessment
-- Valuation assessment
-- Risk assessment
-- Key uncertainties
-- Important metrics to monitor
-- Overall research conclusion
-
----
-
-## 🛠️ Technology Stack
-
-### AI / Agent Framework
+## Technology Stack
 
 - Python
 - CrewAI
 - Google Gemini
-
-### Configuration
-
 - python-dotenv
-- Environment variables
-
-### Planned Tools
-
-The next development phase will introduce external tools for:
-
-- Financial data
-- Stock prices
-- Company financial statements
-- News
-- Market information
-- SEC/company filings
-
-This is important because an investment research application should use retrieved data rather than relying only on the LLM's pretrained knowledge.
+- yfinance
+- pandas
+- requests
+- SEC EDGAR XBRL Company Facts API
 
 ---
 
-## 📁 Current Project Structure
+## Environment Variables
 
-```text
-ai-investment-research/
-│
-├── .env
-├── .gitignore
-├── requirements.txt
-└── app.py
+Create a `.env` file:
+
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+SEC_USER_AGENT=YourAppName your-email@example.com
 ```
 
-As the project grows, the structure can evolve into:
+`GEMINI_API_KEY` is required. `SEC_USER_AGENT` is recommended for SEC API requests.
 
-```text
-ai-investment-research/
-│
-├── agents/
-│   ├── financial_analyst.py
-│   ├── market_researcher.py
-│   ├── valuation_analyst.py
-│   ├── risk_analyst.py
-│   └── investment_strategist.py
-│
-├── tasks/
-│   ├── financial_analysis.py
-│   ├── market_research.py
-│   ├── valuation_analysis.py
-│   ├── risk_analysis.py
-│   └── investment_strategy.py
-│
-├── tools/
-│   ├── financial_data.py
-│   ├── market_data.py
-│   └── news_search.py
-│
-├── config/
-│   └── settings.py
-│
-├── main.py
-├── requirements.txt
-├── .env
-└── .gitignore
-```
+Never commit your `.env` file.
 
 ---
 
-## ⚙️ Installation
+## Installation
 
-Clone the repository and enter the project directory:
-
-```bash
-git clone <your-repository-url>
-cd ai-investment-research
-```
-
-Create a virtual environment:
+Create and activate a virtual environment:
 
 ```bash
 python -m venv venv
-```
-
-Activate it on Windows:
-
-```bash
 venv\Scripts\activate
 ```
 
@@ -242,159 +250,92 @@ pip install -r requirements.txt
 
 ---
 
-## 🔐 Environment Variables
-
-Create a `.env` file:
-
-```env
-GEMINI_API_KEY=your_gemini_api_key_here
-```
-
-Never commit your `.env` file to GitHub.
-
-Your `.gitignore` should contain:
-
-```gitignore
-.env
-__pycache__/
-*.pyc
-.venv/
-venv/
-```
-
----
-
-## ▶️ Running the Project
+## Running The Project
 
 Run:
 
 ```bash
-python main.py
+python app.py
 ```
 
-The current implementation analyzes:
-
-```text
-Apple Inc.
-```
-
-You can change the company in `main.py`:
-
-```python
-company = "Apple Inc."
-```
-
-For example:
-
-```python
-company = "NVIDIA"
-```
-
-or:
-
-```python
-company = "Microsoft"
-```
+The current application analyzes Apple Inc. using ticker `AAPL`. You can change the `company` and `ticker` values in `app.py`.
 
 ---
 
-## 📊 Example Output
+## Tests
 
-The Financial Research Analyst is expected to produce a structured report similar to:
+Run:
 
-```text
-Financial Analysis
-
-1. Company Overview
-2. Revenue and Growth Analysis
-3. Profitability Analysis
-4. Earnings Performance
-5. Cash Flow Analysis
-6. Debt and Financial Stability
-7. Key Financial Strengths
-8. Key Financial Weaknesses
-9. Important Financial Metrics
-10. Overall Financial Health Assessment
+```bash
+python test_financial_metrics.py
+python test_sec_tool.py
+python test_market_tool.py
+python test_financial_tool.py
 ```
+
+The metrics test includes both complete-data and incomplete-data cases. Missing inputs must remain unavailable. For example, if total debt is unavailable, debt-to-equity and net cash must return `None`.
 
 ---
 
-## 🔄 Development Roadmap
+## Roadmap
 
-### Phase 1 — Foundation
+### Phase 1 - Foundation
+
 - [x] CrewAI setup
-- [x] Gemini LLM integration
+- [x] Gemini LLM
 - [x] Financial Research Analyst
 - [x] Financial analysis task
-- [x] Sequential Crew execution
+- [x] Sequential Crew
 
-### Phase 2 — Real Financial Data
-- [ ] Financial-data tool
-- [ ] Stock-price tool
-- [ ] Financial statement retrieval
-- [ ] Source references
-- [ ] Data validation
+### Phase 2 - Real Financial Data
 
-### Phase 3 — Multi-Agent System
+- [x] Yahoo Finance market data
+- [x] SEC EDGAR financial data
+- [x] SEC reporting metadata
+- [x] SEC raw financial evidence
+- [x] SEC normalized financial data
+- [x] Current/non-current debt validation
+- [x] Total debt calculation
+- [x] Signed CapEx normalization
+- [x] Financial Metrics Engine
+- [x] Missing-data validation
+- [x] Pre-retrieved research context
+- [x] Python-calculated financial metrics
+- [x] Financial Analyst integration
+- [x] End-to-end application
+
+### Phase 3 - Multi-Agent System
+
 - [ ] Market & News Analyst
 - [ ] Valuation Analyst
 - [ ] Risk Analyst
 - [ ] Investment Strategist
-- [ ] Agent-to-agent workflow
+- [ ] Multi-agent workflow
+- [ ] Agent-to-agent synthesis
 
-### Phase 4 — Advanced Research
-- [ ] News search
-- [ ] SEC/company filing retrieval
-- [ ] RAG pipeline
+### Phase 4 - Advanced Research
+
 - [ ] Historical financial analysis
+- [ ] News research
 - [ ] Peer comparison
-- [ ] Evidence-based citations
+- [ ] RAG
+- [ ] Evidence-backed citations
 
-### Phase 5 — Production Application
-- [ ] FastAPI backend
-- [ ] Web interface
-- [ ] Structured JSON responses
-- [ ] Research report export
-- [ ] Logging
-- [ ] Error handling
+### Phase 5 - Production
+
+- [ ] FastAPI
+- [ ] Frontend
+- [ ] Structured API responses
+- [ ] Report export
 - [ ] Evaluation framework
 - [ ] Deployment
 
 ---
 
-## ⚠️ Important Disclaimer
+## Important Disclaimer
 
-This project is an **AI research and educational system**, not a financial advisor.
+This project is an AI research and educational system, not a financial advisor.
 
 AI-generated analysis can contain errors, incomplete information, outdated information, or incorrect interpretations. Investment decisions should not be based solely on the output of this system.
 
-The production version should retrieve current financial data and provide sources for material claims before being used for research.
-
----
-
-## 💡 Why This Project?
-
-This project is designed to demonstrate practical GenAI engineering skills including:
-
-- Multi-agent architecture
-- Agent specialization
-- LLM orchestration
-- Task decomposition
-- Tool calling
-- Retrieval-augmented generation
-- Structured outputs
-- Financial data processing
-- Backend API integration
-- AI system evaluation
-
-The long-term objective is to build an investment research pipeline where specialized agents independently investigate different aspects of a company and a senior agent synthesizes the evidence into a single research report.
-
----
-
-## 📌 Project Status
-
-**Current:** 🟡 In Development
-
-**Completed:** Financial Research Analyst
-
-**Next milestone:** Connect the Financial Research Analyst to reliable financial-data tools and validate generated metrics against source data.
+The system retrieves current market data and official SEC financial data, but users should independently verify important financial information before making decisions.
