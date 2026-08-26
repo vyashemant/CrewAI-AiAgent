@@ -1,34 +1,45 @@
 # AI Investment Research Team
 
-An AI investment research project built with **CrewAI**, **Google Gemini**, **yfinance**, and the **SEC EDGAR XBRL Company Facts API**.
+An AI investment research project built with **CrewAI**, **Google Gemini**, **yfinance**, **SEC EDGAR XBRL Company Facts API**, and **Marketaux**.
 
-The current system implements a single Financial Research Analyst. Python retrieves and validates financial data before the CrewAI task begins, then Gemini interprets that validated context to produce a financial research report.
+The current system implements a multi-agent investment research pipeline with three specialized research agents:
 
-> Current status: Phase 2 complete. Phase 3 multi-agent research roles are planned but not implemented.
+- Financial Research Analyst
+- Market & News Research Analyst
+- Valuation Research Analyst
+
+Python retrieves, validates, normalizes, and calculates financial data before the CrewAI tasks begin. The specialized Gemini agents then interpret the validated research context from their respective perspectives.
+
+> **Current status: Phase 3.2B complete. Phase 3.3 Risk Analyst is next.**
 
 ---
 
 ## Project Goal
 
-The long-term goal is to build an AI Investment Research Team that can analyze public companies through specialized research roles and produce a final investment research report.
+The long-term goal is to build an AI Investment Research Team that can analyze public companies through specialized research roles and produce a comprehensive investment research report.
 
-Planned long-term architecture:
+The planned long-term architecture is:
 
 ```text
 User
-  |
-  v
-Research Manager
-  |
-  v
-Financial Analyst
-Market / News Analyst
-Valuation Analyst
-Risk Analyst
-Investment Strategist
-  |
-  v
-Final Investment Research Report
+ |
+ v
+Research Manager / Orchestrator
+ |
+ v
++----------------------+----------------------+
+|                      |                      |
+v                      v                      v
+Financial Analyst   Market / News Analyst   Valuation Analyst
+                                               |
+                                               v
+                                           Risk Analyst
+                                               |
+                                               v
+                                      Investment Strategist
+                                               |
+                                               v
+                                  Final Investment Research Report
 ```
 
 The project is not yet a multi-agent system. The current implementation focuses on reliable financial data retrieval, validation, deterministic metric calculation, and single-agent interpretation.

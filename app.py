@@ -6,7 +6,15 @@ from crewai import LLM, Agent, Task, Crew, Process
 from tools.financial_data_tool import FinancialDataTool
 from tools.market_data_tool import MarketDataTool
 from tools.sec_financial_tool import SECFinancialDataTool
+from tools.news_data_tool import NewsDataTool
 from tools.financial_metrics import FinancialMetricsEngine
+
+from agents import (
+    create_market_news_analyst,
+    create_market_news_task,
+    create_valuation_analyst,
+    create_valuation_task,
+)
 
 # ============================================================
 # 1. ENVIRONMENT CONFIGURATION
@@ -41,6 +49,7 @@ llm = LLM(
 financial_data_tool = FinancialDataTool()
 market_data_tool = MarketDataTool()
 sec_financial_tool = SECFinancialDataTool()
+news_data_tool = NewsDataTool()
 metrics_engine = FinancialMetricsEngine()
 
 
@@ -208,6 +217,84 @@ def build_financial_research_context(
         "Raw SEC Evidence\n"
         f"{financial_data.get('raw')}"
     )
+
+
+def build_valuation_metrics_section(financial_data_result):
+    """
+    Format the FinancialDataTool valuation_metrics dict into a
+    labelled context block for the research context.
+
+    financial_data_result is the raw dict returned by
+    financial_data_tool._run(ticker).
+    """
+
+    if not isinstance(financial_data_result, dict):
+        return (
+            "\n\nMarket Valuation Metrics — Yahoo Finance via yfinance\n"
+            "- Valuation metrics unavailable."
+        )
+
+    vm = financial_data_result.get("valuation_metrics", {})
+
+    def fmt_multiple(value, decimals=2):
+        if value is None:
+            return "Unavailable"
+        return f"{value:.{decimals}f}x"
+
+    market_cap = vm.get("Market Cap")
+    trailing_pe = vm.get("Trailing P/E")
+    forward_pe = vm.get("Forward P/E")
+    price_to_sales = vm.get("Price To Sales")
+    price_to_book = vm.get("Price To Book")
+    enterprise_value = vm.get("Enterprise Value")
+    ev_to_ebitda = vm.get("Enterprise To EBITDA")
+
+    return (
+        "\n\nMarket Valuation Metrics — Yahoo Finance via yfinance\n"
+        "These are retrieved market valuation metrics. "
+        "The Valuation Analyst must prefer these over any "
+        "independently derived calculations from SEC data.\n"
+        f"- Market Capitalization: {format_currency(market_cap)}\n"
+        f"- Trailing P/E: {fmt_multiple(trailing_pe)}\n"
+        f"- Forward P/E: {fmt_multiple(forward_pe)}\n"
+        f"- Price-to-Sales: {fmt_multiple(price_to_sales)}\n"
+        f"- Price-to-Book: {fmt_multiple(price_to_book)}\n"
+        f"- Enterprise Value: {format_currency(enterprise_value)}\n"
+        f"- Enterprise Value / EBITDA: {fmt_multiple(ev_to_ebitda)}"
+    )
+
+
+def build_combined_research_context(
+    ticker,
+    market_result,
+    sec_result,
+    calculated_metrics,
+    financial_data_result,
+    news_result
+):
+    """
+    Build the combined research context that all three specialist
+    agents receive. Extends the financial context with the
+    FinancialDataTool valuation metrics and news data.
+    """
+
+    financial_context = build_financial_research_context(
+        ticker,
+        market_result,
+        sec_result,
+        calculated_metrics
+    )
+
+    valuation_section = build_valuation_metrics_section(
+        financial_data_result
+    )
+
+    news_section = (
+        "\n\nRecent Company News\n"
+        f"{news_result}"
+    )
+
+    return financial_context + valuation_section + news_section
 
 
 # ============================================================
@@ -401,16 +488,38 @@ financial_analysis_task = Task(
 
 
 # ============================================================
-# 7. CREW CONFIGURATION
+# 7. MARKET & NEWS ANALYST
+# ============================================================
+
+market_news_analyst = create_market_news_analyst(llm)
+
+market_news_task = create_market_news_task(market_news_analyst)
+
+
+# ============================================================
+# 8. VALUATION ANALYST
+# ============================================================
+
+valuation_analyst = create_valuation_analyst(llm)
+
+valuation_task = create_valuation_task(valuation_analyst)
+
+
+# ============================================================
+# 9. CREW CONFIGURATION
 # ============================================================
 
 team = Crew(
     agents=[
-        financial_analyst
+        financial_analyst,
+        market_news_analyst,
+        valuation_analyst
     ],
 
     tasks=[
-        financial_analysis_task
+        financial_analysis_task,
+        market_news_task,
+        valuation_task
     ],
 
     process=Process.sequential,
@@ -424,39 +533,64 @@ def prepare_financial_research(ticker):
     before sending the information to the LLM.
     """
 
-    market_result = market_data_tool.run(
+    market_data = market_data_tool.run(
         ticker=ticker
     )
 
-    sec_result = sec_financial_tool.get_financial_data(
+    sec_data = sec_financial_tool.get_financial_data(
         ticker=ticker
     )
 
-    normalized = {}
+    # Retrieve valuation metrics from Yahoo Finance via FinancialDataTool.
+    # Call _run() directly to obtain the raw dict before stringification.
+    financial_data = financial_data_tool._run(
+        ticker=ticker
+    )
 
-    if isinstance(sec_result, dict):
-        normalized = sec_result.get(
-            "financial_data",
-            {}
-        ).get(
-            "normalized",
-            {}
-        )
+    news_data = news_data_tool.run(
+        ticker=ticker,
+        limit=3
+    )
 
-    calculated_metrics = metrics_engine.calculate_from_sec_data(
+    normalized = sec_data.get(
+        "financial_data",
+        {}
+    ).get(
+        "normalized",
+        {}
+    )
+
+    metrics = metrics_engine.calculate_from_sec_data(
         normalized
     )
 
-    return build_financial_research_context(
+    return {
+        "market_data": market_data,
+        "sec_data": sec_data,
+        "financial_data": financial_data,
+        "news_data": news_data,
+        "metrics": metrics
+    }
+
+
+def build_research_context_from_prepared(ticker, prepared):
+    """
+    Convert the prepared research dict into the combined context
+    string that all three specialist agents receive.
+    """
+
+    return build_combined_research_context(
         ticker=ticker,
-        market_result=market_result,
-        sec_result=sec_result,
-        calculated_metrics=calculated_metrics
+        market_result=prepared["market_data"],
+        sec_result=prepared["sec_data"],
+        calculated_metrics=prepared["metrics"],
+        financial_data_result=prepared["financial_data"],
+        news_result=prepared["news_data"]
     )
 
 
 # ============================================================
-# 8. RUN THE CREW
+# 10. RUN THE CREW
 # ============================================================
 
 if __name__ == "__main__":
@@ -470,12 +604,20 @@ if __name__ == "__main__":
 
     print(f"\nAnalyzing: {company}")
     print(f"Ticker: {ticker}")
-    print("Research type: Fundamental Financial Analysis")
-    print("Data sources: Yahoo Finance via yfinance and SEC EDGAR")
+    print("Research type: Three-Specialist Investment Research")
+    print(
+        "Data sources: Yahoo Finance via yfinance, "
+        "SEC EDGAR, and Marketaux"
+    )
     print("\nStarting analysis...\n")
 
-    research_context = prepare_financial_research(
+    prepared = prepare_financial_research(
         ticker=ticker
+    )
+
+    research_context = build_research_context_from_prepared(
+        ticker=ticker,
+        prepared=prepared
     )
 
     result = team.kickoff(
@@ -486,14 +628,33 @@ if __name__ == "__main__":
     )
 
     # ========================================================
-    # 8. DISPLAY RESULT
+    # DISPLAY THREE SPECIALIST REPORTS
     # ========================================================
 
-    print("\n" + "=" * 70)
-    print("FINAL FINANCIAL ANALYSIS")
-    print("=" * 70)
+    tasks_output = result.tasks_output
 
-    print(result)
+    print("\n" + "=" * 70)
+    print("FINANCIAL RESEARCH")
+    print("=" * 70)
+    print(tasks_output[0].raw if tasks_output else "Unavailable")
+
+    print("\n" + "=" * 70)
+    print("MARKET & NEWS RESEARCH")
+    print("=" * 70)
+    print(
+        tasks_output[1].raw
+        if len(tasks_output) > 1
+        else "Unavailable"
+    )
+
+    print("\n" + "=" * 70)
+    print("VALUATION RESEARCH")
+    print("=" * 70)
+    print(
+        tasks_output[2].raw
+        if len(tasks_output) > 2
+        else "Unavailable"
+    )
 
     print("\n" + "=" * 70)
     print("ANALYSIS COMPLETE")
