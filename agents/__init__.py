@@ -7,3 +7,9 @@ from .valuation_analyst import (
     create_valuation_analyst,
     create_valuation_task,
 )
+
+from .investment_strategist import (
+    create_investment_strategist,
+    create_investment_strategy_task,
+    InvestmentStrategy,
+)

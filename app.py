@@ -1,4 +1,7 @@
 import os
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dotenv import load_dotenv
 from crewai import LLM, Agent, Task, Crew, Process
@@ -9,11 +12,24 @@ from tools.sec_financial_tool import SECFinancialDataTool
 from tools.news_data_tool import NewsDataTool
 from tools.financial_metrics import FinancialMetricsEngine
 
-from agents import (
+from agents.market_news_analyst import (
     create_market_news_analyst,
-    create_market_news_task,
+    create_market_news_task
+)
+
+from agents.valuation_analyst import (
     create_valuation_analyst,
-    create_valuation_task,
+    create_valuation_task
+)
+
+from agents.risk_analyst import (
+    create_risk_analyst,
+    create_risk_analysis_task
+)
+
+from agents.investment_strategist import (
+    create_investment_strategist,
+    create_investment_strategy_task,
 )
 
 # ============================================================
@@ -21,6 +37,18 @@ from agents import (
 # ============================================================
 
 load_dotenv()
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(
+        encoding="utf-8",
+        errors="replace"
+    )
+
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(
+        encoding="utf-8",
+        errors="replace"
+    )
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
@@ -297,6 +325,167 @@ def build_combined_research_context(
     return financial_context + valuation_section + news_section
 
 
+def build_compact_financial_snapshot(ticker, sec_result, calculated_metrics):
+    """
+    Build a compact SEC and metrics snapshot for specialists that
+    need verified figures but not the full raw SEC evidence payload.
+    """
+
+    if not isinstance(sec_result, dict):
+        return (
+            "Verified financial snapshot is unavailable.\n"
+            f"SEC retrieval result: {sec_result}"
+        )
+
+    financial_data = sec_result.get(
+        "financial_data",
+        {}
+    )
+
+    normalized = financial_data.get(
+        "normalized",
+        {}
+    )
+
+    metadata = sec_result.get(
+        "reporting_metadata",
+        {}
+    )
+
+    calculated_lines = []
+
+    metric_labels = {
+        "revenue_growth": ("Revenue Growth", "%"),
+        "net_income_growth": ("Net Income Growth", "%"),
+        "gross_margin": ("Gross Margin", "%"),
+        "operating_margin": ("Operating Margin", "%"),
+        "net_profit_margin": ("Net Profit Margin", "%"),
+        "free_cash_flow": ("Free Cash Flow", "$"),
+        "fcf_margin": ("FCF Margin", "%"),
+        "debt_to_equity": ("Debt-to-Equity", "%"),
+        "net_cash": ("Net Cash", "$"),
+        "return_on_equity": ("ROE", "%"),
+        "return_on_assets": ("ROA", "%"),
+        "asset_turnover": ("Asset Turnover", "x"),
+        "equity_multiplier": ("Equity Multiplier", "x")
+    }
+
+    for key, value in calculated_metrics.items():
+        label, metric_type = metric_labels.get(
+            key,
+            (key, "")
+        )
+
+        if value is None:
+            formatted = "Unavailable"
+        elif metric_type == "$":
+            formatted = format_currency(value)
+        elif metric_type == "%":
+            formatted = format_metric(value, "%")
+        elif metric_type == "x":
+            formatted = format_metric(value, "x")
+        else:
+            formatted = format_metric(value)
+
+        calculated_lines.append(
+            f"- {label}: {formatted}"
+        )
+
+    return (
+        "VERIFIED FINANCIAL SNAPSHOT\n\n"
+        "Use these retrieved SEC facts and Python-calculated metrics as "
+        "authoritative. Do not invent unavailable values.\n\n"
+
+        "Latest Financial Reporting Period\n"
+        f"- Ticker: {ticker}\n"
+        f"- Company: {sec_result.get('company')}\n"
+        f"- CIK: {metadata.get('cik')}\n"
+        f"- Form: {metadata.get('form')}\n"
+        f"- Fiscal Year: {metadata.get('fiscal_year')}\n"
+        f"- Fiscal Period: {metadata.get('fiscal_period')}\n"
+        f"- Filed: {metadata.get('filed')}\n"
+        f"- Period Start: {metadata.get('period_start')}\n"
+        f"- Period End: {metadata.get('period_end')}\n\n"
+
+        "Retrieved Financial Facts\n"
+        f"- Revenue: {format_currency(normalized.get('revenue'))}\n"
+        f"- Gross Profit: {format_currency(normalized.get('gross_profit'))}\n"
+        f"- Operating Income: {format_currency(normalized.get('operating_income'))}\n"
+        f"- Net Income: {format_currency(normalized.get('net_income'))}\n"
+        f"- Assets: {format_currency(normalized.get('assets'))}\n"
+        f"- Liabilities: {format_currency(normalized.get('liabilities'))}\n"
+        f"- Stockholders' Equity: {format_currency(normalized.get('stockholders_equity'))}\n"
+        f"- Cash and Equivalents: {format_currency(normalized.get('cash'))}\n"
+        f"- Total Debt: {format_currency(normalized.get('total_debt'))}\n"
+        f"- Operating Cash Flow: {format_currency(normalized.get('operating_cash_flow'))}\n"
+        f"- Capital Expenditure: {format_currency(normalized.get('capital_expenditure'))}\n\n"
+
+        "Calculated Metrics\n"
+        + "\n".join(calculated_lines)
+    )
+
+
+def build_specialist_research_contexts(ticker, prepared):
+    """
+    Build scoped specialist contexts from one prepared research snapshot.
+    No external data is retrieved here.
+    """
+
+    financial_context = build_financial_research_context(
+        ticker=ticker,
+        market_result=prepared["market_data"],
+        sec_result=prepared["sec_data"],
+        calculated_metrics=prepared["metrics"]
+    ) + build_valuation_metrics_section(
+        prepared["financial_data"]
+    )
+
+    compact_financial_snapshot = build_compact_financial_snapshot(
+        ticker=ticker,
+        sec_result=prepared["sec_data"],
+        calculated_metrics=prepared["metrics"]
+    )
+
+    market_context = (
+        "PRE-RETRIEVED VERIFIED MARKET AND NEWS CONTEXT\n\n"
+        "Use only this single runtime snapshot. Do not retrieve "
+        "or invent additional news, market data, or financial values.\n\n"
+        "Market Data - Yahoo Finance via yfinance\n"
+        f"{prepared['market_data']}\n\n"
+        "Relevant Financial Context\n"
+        f"{compact_financial_snapshot}\n\n"
+        "Recent Company News - Marketaux\n"
+        f"{prepared['news_data']}"
+    )
+
+    valuation_context = (
+        "PRE-RETRIEVED VERIFIED VALUATION CONTEXT\n\n"
+        "Use only this single runtime snapshot. Do not retrieve "
+        "or invent peer multiples, historical ranges, or forecasts.\n\n"
+        f"{compact_financial_snapshot}"
+        f"{build_valuation_metrics_section(prepared['financial_data'])}"
+    )
+
+    risk_context = (
+        "PRE-RETRIEVED VERIFIED RISK CONTEXT\n\n"
+        "Use only this single runtime snapshot. Do not invent missing "
+        "risk factors, financial values, forecasts, or news events.\n\n"
+        f"{compact_financial_snapshot}\n\n"
+        "Market Data - Yahoo Finance via yfinance\n"
+        f"{prepared['market_data']}"
+        f"{build_valuation_metrics_section(prepared['financial_data'])}\n\n"
+        "Recent Company News - Marketaux\n"
+        f"{prepared['news_data']}"
+    )
+
+    return {
+        "Financial Analyst": financial_context,
+        "Market & News Analyst": market_context,
+        "Valuation Analyst": valuation_context,
+        "Risk Analyst": risk_context
+    }
+
+
 # ============================================================
 # 5. FINANCIAL RESEARCH ANALYST
 # ============================================================
@@ -506,20 +695,58 @@ valuation_task = create_valuation_task(valuation_analyst)
 
 
 # ============================================================
-# 9. CREW CONFIGURATION
+# 9. RISK ANALYST
 # ============================================================
 
-team = Crew(
+risk_analyst = create_risk_analyst(llm)
+
+risk_analysis_task = create_risk_analysis_task(risk_analyst)
+
+
+# ============================================================
+# 10. INVESTMENT STRATEGIST
+# ============================================================
+
+investment_strategist = create_investment_strategist(llm)
+
+investment_strategy_task = create_investment_strategy_task(investment_strategist)
+
+# ============================================================
+# 11. SPECIALIST CREW CONFIGURATION
+# ============================================================
+
+specialist_team = Crew(
     agents=[
         financial_analyst,
         market_news_analyst,
-        valuation_analyst
+        valuation_analyst,
+        risk_analyst
     ],
 
     tasks=[
         financial_analysis_task,
         market_news_task,
-        valuation_task
+        valuation_task,
+        risk_analysis_task
+    ],
+
+    process=Process.sequential,
+
+    verbose=True
+)
+
+
+# ============================================================
+# 12. INVESTMENT STRATEGY CREW CONFIGURATION
+# ============================================================
+
+strategy_team = Crew(
+    agents=[
+        investment_strategist
+    ],
+
+    tasks=[
+        investment_strategy_task
     ],
 
     process=Process.sequential,
@@ -589,73 +816,362 @@ def build_research_context_from_prepared(ticker, prepared):
     )
 
 
-# ============================================================
-# 10. RUN THE CREW
-# ============================================================
+def run_single_specialist(name, agent, task, base_inputs, research_context):
+    """
+    Run one specialist analyst in an isolated one-task crew.
+    Each specialist receives the same prepared research snapshot.
+    """
 
-if __name__ == "__main__":
+    start_time = time.perf_counter()
 
-    company = "Apple Inc."
-    ticker = "AAPL"
+    crew = Crew(
+        agents=[
+            agent
+        ],
 
-    print("\n" + "=" * 70)
-    print("AI INVESTMENT RESEARCH TEAM")
-    print("=" * 70)
+        tasks=[
+            task
+        ],
 
-    print(f"\nAnalyzing: {company}")
-    print(f"Ticker: {ticker}")
-    print("Research type: Three-Specialist Investment Research")
-    print(
-        "Data sources: Yahoo Finance via yfinance, "
-        "SEC EDGAR, and Marketaux"
-    )
-    print("\nStarting analysis...\n")
+        process=Process.sequential,
 
-    prepared = prepare_financial_research(
-        ticker=ticker
+        verbose=True
     )
 
-    research_context = build_research_context_from_prepared(
-        ticker=ticker,
-        prepared=prepared
-    )
-
-    result = team.kickoff(
+    result = crew.kickoff(
         inputs={
-            "company": company,
+            **base_inputs,
             "research_context": research_context
         }
     )
 
-    # ========================================================
-    # DISPLAY THREE SPECIALIST REPORTS
-    # ========================================================
+    elapsed = time.perf_counter() - start_time
 
-    tasks_output = result.tasks_output
+    if getattr(result, "tasks_output", None):
+        report = result.tasks_output[0]
+    else:
+        report = result
 
-    print("\n" + "=" * 70)
-    print("FINANCIAL RESEARCH")
-    print("=" * 70)
-    print(tasks_output[0].raw if tasks_output else "Unavailable")
+    return {
+        "name": name,
+        "report": str(report),
+        "elapsed": elapsed
+    }
 
-    print("\n" + "=" * 70)
-    print("MARKET & NEWS RESEARCH")
-    print("=" * 70)
+
+def run_specialists_in_parallel(base_inputs, research_contexts):
+    """
+    Run independent specialist agents concurrently after data retrieval.
+    The Investment Strategist still runs only after all reports complete.
+    """
+
+    specialists = [
+        (
+            "Financial Analyst",
+            financial_analyst,
+            financial_analysis_task
+        ),
+        (
+            "Market & News Analyst",
+            market_news_analyst,
+            market_news_task
+        ),
+        (
+            "Valuation Analyst",
+            valuation_analyst,
+            valuation_task
+        ),
+        (
+            "Risk Analyst",
+            risk_analyst,
+            risk_analysis_task
+        )
+    ]
+
+    results = {}
+
+    with ThreadPoolExecutor(max_workers=len(specialists)) as executor:
+        future_to_name = {
+            executor.submit(
+                run_single_specialist,
+                name,
+                agent,
+                task,
+                base_inputs,
+                research_contexts[name]
+            ): name
+            for name, agent, task in specialists
+        }
+
+        for future in as_completed(future_to_name):
+            result = future.result()
+            results[result["name"]] = result
+
+    return results
+
+
+def print_pipeline_timing(timings):
+    """Print compact timing information for the major pipeline stages."""
+
+    print("\n")
+    print("RESEARCH PIPELINE TIMING")
+    print("-" * 80)
+    print(f"Data retrieval:              {timings['data_retrieval']:.2f} sec")
+    print(f"Context preparation:         {timings['context_preparation']:.2f} sec")
     print(
-        tasks_output[1].raw
-        if len(tasks_output) > 1
-        else "Unavailable"
+        f"Parallel specialist stage:   "
+        f"{timings['parallel_specialist_stage']:.2f} sec"
     )
 
-    print("\n" + "=" * 70)
-    print("VALUATION RESEARCH")
-    print("=" * 70)
-    print(
-        tasks_output[2].raw
-        if len(tasks_output) > 2
-        else "Unavailable"
-    )
+    for name in [
+        "Financial Analyst",
+        "Market & News Analyst",
+        "Valuation Analyst",
+        "Risk Analyst"
+    ]:
+        print(f"{name + ':':28} {timings[name]:.2f} sec")
 
-    print("\n" + "=" * 70)
-    print("ANALYSIS COMPLETE")
-    print("=" * 70)
+    print(f"Investment Strategist:       {timings['investment_strategist']:.2f} sec")
+    print(f"Total:                       {timings['total']:.2f} sec")
+    print("-" * 80)
+
+
+# ============================================================
+# 13. RUN RESEARCH PIPELINE
+# ============================================================
+
+if __name__ == "__main__":
+
+    total_start = time.perf_counter()
+    timings = {}
+
+    company = "Apple Inc."
+    ticker = "AAPL"
+
+    print("\n")
+    print("=" * 80)
+    print("AI INVESTMENT RESEARCH TEAM")
+    print("=" * 80)
+
+    # --------------------------------------------------------
+    # STEP 1: RETRIEVE AND PREPARE RESEARCH DATA
+    # --------------------------------------------------------
+
+    print("\n")
+    print("=" * 80)
+    print("STEP 1 - PREPARING RESEARCH DATA")
+    print("=" * 80)
+
+    stage_start = time.perf_counter()
+    prepared = prepare_financial_research(ticker)
+    timings["data_retrieval"] = time.perf_counter() - stage_start
+
+    stage_start = time.perf_counter()
+    research_contexts = build_specialist_research_contexts(
+        ticker=ticker,
+        prepared=prepared
+    )
+    timings["context_preparation"] = time.perf_counter() - stage_start
+
+    # --------------------------------------------------------
+    # STEP 2: RUN SPECIALIST ANALYSTS
+    # --------------------------------------------------------
+
+    print("\n")
+    print("=" * 80)
+    print("STEP 2 - RUNNING SPECIALIST ANALYSTS")
+    print("=" * 80)
+
+    specialist_inputs = {
+        "company": company,
+        "ticker": ticker
+    }
+
+    stage_start = time.perf_counter()
+    specialist_results = run_specialists_in_parallel(
+        specialist_inputs,
+        research_contexts
+    )
+    timings["parallel_specialist_stage"] = time.perf_counter() - stage_start
+
+    # --------------------------------------------------------
+    # STEP 3: EXTRACT SPECIALIST REPORTS
+    # --------------------------------------------------------
+
+    print("\n")
+    print("=" * 80)
+    print("STEP 3 - COLLECTING SPECIALIST REPORTS")
+    print("=" * 80)
+
+    financial_report = specialist_results["Financial Analyst"]["report"]
+    market_news_report = specialist_results["Market & News Analyst"]["report"]
+    valuation_report = specialist_results["Valuation Analyst"]["report"]
+    risk_report = specialist_results["Risk Analyst"]["report"]
+
+    for name, result in specialist_results.items():
+        timings[name] = result["elapsed"]
+
+    # --------------------------------------------------------
+    # STEP 4: RUN INVESTMENT STRATEGIST
+    # --------------------------------------------------------
+
+    print("\n")
+    print("=" * 80)
+    print("STEP 4 - RUNNING INVESTMENT STRATEGIST")
+    print("=" * 80)
+
+    stage_start = time.perf_counter()
+    strategy_result = strategy_team.kickoff(
+        inputs={
+            "company": company,
+            "ticker": ticker,
+
+            "financial_analyst_report": financial_report,
+
+            "market_news_analyst_report": market_news_report,
+
+            "valuation_analyst_report": valuation_report,
+
+            "risk_analyst_report": risk_report
+        }
+    )
+    timings["investment_strategist"] = time.perf_counter() - stage_start
+
+    # --------------------------------------------------------
+    # STEP 5: EXTRACT STRUCTURED STRATEGY
+    # --------------------------------------------------------
+
+    strategy = strategy_result.pydantic
+
+    # --------------------------------------------------------
+    # STEP 6: DISPLAY FINAL INVESTMENT STRATEGY
+    # --------------------------------------------------------
+
+    print("\n")
+    print("=" * 80)
+    print("FINAL INVESTMENT STRATEGY")
+    print("=" * 80)
+
+    if strategy is None:
+
+        print("\nStructured strategy was not returned.")
+        print("\nRaw strategist output:")
+        print(strategy_result.raw)
+
+    else:
+
+        print(f"\nCompany: {company}")
+        print(f"Ticker: {ticker}")
+        print(f"Recommendation: {strategy.recommendation}")
+        print(f"Confidence: {strategy.confidence}")
+
+        print("\n" + "-" * 80)
+        print("INVESTMENT THESIS")
+        print("-" * 80)
+        print(strategy.investment_thesis)
+
+        print("\n" + "-" * 80)
+        print("COMPANY QUALITY")
+        print("-" * 80)
+        print(strategy.company_quality)
+
+        print("\n" + "-" * 80)
+        print("VALUATION VIEW")
+        print("-" * 80)
+        print(strategy.valuation_view)
+
+        print("\n" + "-" * 80)
+        print("FUNDAMENTAL ASSESSMENT")
+        print("-" * 80)
+        print(strategy.fundamental_assessment)
+
+        print("\n" + "-" * 80)
+        print("MARKET & NEWS ASSESSMENT")
+        print("-" * 80)
+        print(strategy.market_and_news_assessment)
+
+        print("\n" + "-" * 80)
+        print("VALUATION ASSESSMENT")
+        print("-" * 80)
+        print(strategy.valuation_assessment)
+
+        print("\n" + "-" * 80)
+        print("RISK ASSESSMENT")
+        print("-" * 80)
+        print(strategy.risk_assessment)
+
+        print("\n" + "-" * 80)
+        print("BULL CASE")
+        print("-" * 80)
+        print(strategy.bull_case)
+
+        print("\n" + "-" * 80)
+        print("BASE CASE")
+        print("-" * 80)
+        print(strategy.base_case)
+
+        print("\n" + "-" * 80)
+        print("BEAR CASE")
+        print("-" * 80)
+        print(strategy.bear_case)
+
+        print("\n" + "-" * 80)
+        print("KEY CATALYSTS")
+        print("-" * 80)
+
+        for index, catalyst in enumerate(
+            strategy.key_catalysts,
+            1
+        ):
+            print(f"{index}. {catalyst}")
+
+        print("\n" + "-" * 80)
+        print("KEY RISKS")
+        print("-" * 80)
+
+        for index, risk in enumerate(
+            strategy.key_risks,
+            1
+        ):
+            print(f"{index}. {risk}")
+
+        print("\n" + "-" * 80)
+        print("THESIS CHANGE TRIGGERS")
+        print("-" * 80)
+
+        for index, trigger in enumerate(
+            strategy.thesis_change_triggers,
+            1
+        ):
+            print(f"{index}. {trigger}")
+
+        print("\n" + "-" * 80)
+        print("EVIDENCE SUMMARY")
+        print("-" * 80)
+        print(strategy.evidence_summary)
+
+        print("\n" + "-" * 80)
+        print("INFORMATION LIMITATIONS")
+        print("-" * 80)
+        print(strategy.information_limitations)
+
+        print("\n" + "-" * 80)
+        print("CONTRADICTIONS / DATA CONSISTENCY ISSUES")
+        print("-" * 80)
+
+        if strategy.contradictions_detected:
+            print(strategy.contradictions_detected)
+        else:
+            print("None detected.")
+
+        print("\n")
+        print("=" * 80)
+        print(
+            f"FINAL RECOMMENDATION: "
+            f"{strategy.recommendation} | "
+            f"CONFIDENCE: {strategy.confidence}"
+        )
+        print("=" * 80)
+
+    timings["total"] = time.perf_counter() - total_start
+    print_pipeline_timing(timings)
