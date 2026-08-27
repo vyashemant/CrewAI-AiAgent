@@ -141,4 +141,10 @@ service-account.json
 # Miscellaneous
 # ============================================================
 
-*.bak
+*.bak 
+
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
