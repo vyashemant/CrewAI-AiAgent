@@ -127,6 +127,72 @@ The Financial Research Analyst produces a structured financial research report c
 
 All external financial data is retrieved by the Python orchestration layer before CrewAI kickoff. The analyst receives the pre-retrieved verified research context and is responsible for interpretation, explanation, and financial reasoning.
 
+### Market & News Research Analyst
+
+The Market & News Research Analyst covers:
+
+- Recent company developments
+- Key news events
+- Market activity (price, 52-week range, beta)
+- Positive and negative catalysts
+- Industry and external factors
+- Potential stock impact
+- Key events to monitor
+- Information limitations
+
+### Valuation Research Analyst
+
+The Valuation Research Analyst covers:
+
+- Market capitalization and enterprise value
+- Valuation multiples (P/E, forward P/E, P/S, P/B, EV/EBITDA)
+- Profitability and efficiency metrics from SEC data
+- Valuation strengths and risks
+- Overall valuation assessment
+- Data limitations
+
+### Risk Research Analyst
+
+The Risk Research Analyst covers:
+
+- Financial risks (leverage, debt, cash flow)
+- Business risks (concentration, ecosystem, growth)
+- Market risks (valuation, volatility, scale)
+- Valuation risks (multiple compression)
+- News and event risks
+- Data-quality risks and limitations
+- Key risk factors summary
+- Overall risk assessment
+
+### Investment Strategist
+
+The Investment Strategist synthesises all four specialist reports and produces a structured `InvestmentStrategy` Pydantic object covering:
+
+- Investment thesis
+- Fundamental, market/news, valuation, and risk assessments
+- Bull, base, and bear cases
+- Key catalysts and key risks
+- Thesis change triggers
+- Company quality and valuation view
+- Final recommendation (BUY / HOLD / SELL)
+- Confidence level (LOW / MEDIUM / HIGH)
+- Evidence summary and information limitations
+
+### Final Investment Research Report
+
+The `InvestmentResearchReport` Pydantic model assembles all pipeline outputs into one canonical, JSON-serialisable object. It is constructed deterministically in Python — no additional LLM or API calls are made.
+
+Sections:
+
+- Identity (company, ticker, research date)
+- Market snapshot (from Yahoo Finance)
+- Financial summary (from SEC EDGAR)
+- Financial metrics (from the Python Metrics Engine)
+- News (from Marketaux)
+- Specialist reports (all four plain-text outputs)
+- Investment strategy (composed `InvestmentStrategy` object)
+- Data sources (provenance record)
+
 ---
 
 ## Data Sources
@@ -200,7 +266,11 @@ Calculated metrics include:
 
 ### `tools/financial_data_tool.py`
 
-Retrieves additional Yahoo Finance fundamental data, including financial statements and valuation metrics. The current Phase 2 flow primarily relies on SEC EDGAR for official fundamental financial statement data.
+Retrieves additional Yahoo Finance fundamental data, including financial statements and valuation metrics. Valuation multiples (P/E, forward P/E, P/S, P/B, EV/EBITDA) sourced here are passed to the Valuation and Risk analysts.
+
+### `tools/news_data_tool.py`
+
+Retrieves recent news articles for the ticker from the Marketaux API. Articles include title, description, snippet, URL, publication date, source, and per-entity sentiment scores.
 
 ---
 
@@ -209,21 +279,36 @@ Retrieves additional Yahoo Finance fundamental data, including financial stateme
 ```text
 CrewAI/
 |-- .vscode/
+|-- agents/
+|   |-- __init__.py
+|   |-- investment_research_report.py
+|   |-- investment_strategist.py
+|   |-- market_news_analyst.py
+|   |-- risk_analyst.py
+|   `-- valuation_analyst.py
 |-- tools/
 |   |-- __init__.py
 |   |-- financial_data_tool.py
 |   |-- financial_metrics.py
 |   |-- market_data_tool.py
+|   |-- news_data_tool.py
 |   `-- sec_financial_tool.py
 |-- .env
+|-- .env.example
 |-- .gitignore
 |-- app.py
 |-- README.md
 |-- requirements.txt
 |-- test_financial_metrics.py
 |-- test_financial_tool.py
+|-- test_investment_research_report.py
+|-- test_investment_strategist.py
+|-- test_market_news_agent.py
 |-- test_market_tool.py
-`-- test_sec_tool.py
+|-- test_news_tool.py
+|-- test_risk_analyst.py
+|-- test_sec_tool.py
+`-- test_valuation_agent.py
 ```
 
 ---
@@ -232,12 +317,14 @@ CrewAI/
 
 - Python
 - CrewAI
-- Google Gemini
+- Google Gemini (`gemini-2.0-flash`)
 - python-dotenv
 - yfinance
 - pandas
 - requests
+- pydantic
 - SEC EDGAR XBRL Company Facts API
+- Marketaux News API
 
 ---
 
@@ -294,9 +381,19 @@ python test_financial_metrics.py
 python test_sec_tool.py
 python test_market_tool.py
 python test_financial_tool.py
+python test_news_tool.py
+python test_market_news_agent.py
+python test_valuation_agent.py
+python test_risk_analyst.py
+python test_investment_strategist.py
+python test_investment_research_report.py
 ```
 
 The metrics test includes both complete-data and incomplete-data cases. Missing inputs must remain unavailable. For example, if total debt is unavailable, debt-to-equity and net cash must return `None`.
+
+The agent tests (`test_market_news_agent.py`, `test_valuation_agent.py`, `test_risk_analyst.py`, `test_investment_strategist.py`) make live Gemini API calls and take 1–5 minutes each.
+
+The `test_investment_research_report.py` test uses only mock data — no live API or Gemini calls.
 
 ---
 
@@ -349,12 +446,9 @@ The metrics test includes both complete-data and incomplete-data cases. Missing 
 
 ### Phase 5 - Production
 
-- [ ] FastAPI
-- [ ] Frontend
-- [ ] Structured API responses
-- [ ] Report export
 - [ ] Evaluation framework
-- [ ] Deployment
+- [ ] CI/CD pipeline
+- [ ] Performance benchmarking
 
 ---
 
