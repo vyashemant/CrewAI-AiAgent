@@ -2,15 +2,17 @@
 
 An AI investment research project built with **CrewAI**, **Google Gemini**, **yfinance**, **SEC EDGAR XBRL Company Facts API**, and **Marketaux**.
 
-The current system implements a multi-agent investment research pipeline with three specialized research agents:
+The current system implements a complete multi-agent investment research pipeline with five specialized roles:
 
 - Financial Research Analyst
 - Market & News Research Analyst
 - Valuation Research Analyst
+- Risk Research Analyst
+- Investment Strategist
 
-Python retrieves, validates, normalizes, and calculates financial data before the CrewAI tasks begin. The specialized Gemini agents then interpret the validated research context from their respective perspectives.
+Python retrieves, validates, normalizes, and calculates financial data before the CrewAI tasks begin. The specialized Gemini agents then interpret the validated research context from their respective perspectives. The Investment Strategist synthesises all four specialist reports into a final structured investment recommendation.
 
-> **Current status: Phase 3.2B complete. Phase 3.3 Risk Analyst is next.**
+> **Current status: Phase 3 complete.**
 
 ---
 
@@ -42,7 +44,7 @@ Financial Analyst   Market / News Analyst   Valuation Analyst
                                   Final Investment Research Report
 ```
 
-The project is not yet a multi-agent system. The current implementation focuses on reliable financial data retrieval, validation, deterministic metric calculation, and single-agent interpretation.
+The project is now a multi-agent system. The current implementation spans the complete research pipeline from data retrieval to final structured investment report.
 
 ---
 
@@ -68,11 +70,21 @@ Financial Metrics Engine
     v
 Validated Research Context
     |
-    v
-Financial Research Analyst
-    |
-    v
-Final Report
+    +--------------------------+---------------------------+
+    |                          |                           |
+    v                          v                           v
+Financial Analyst    Market & News Analyst    Valuation Analyst
+    |                          |                           |
+    +------------------+-------+---------------------------+
+                       |
+                       v
+                  Risk Analyst
+                       |
+                       v
+             Investment Strategist
+                       |
+                       v
+      InvestmentResearchReport (structured final output)
 ```
 
 The design principle is:
@@ -315,22 +327,25 @@ The metrics test includes both complete-data and incomplete-data cases. Missing 
 - [x] Financial Analyst integration
 - [x] End-to-end application
 
-### Phase 3 - Multi-Agent System
+### Phase 3 - Multi-Agent Investment Research
 
-- [ ] Market & News Analyst
-- [ ] Valuation Analyst
-- [ ] Risk Analyst
-- [ ] Investment Strategist
-- [ ] Multi-agent workflow
-- [ ] Agent-to-agent synthesis
+- [x] Financial Analyst
+- [x] Market & News Analyst
+- [x] Valuation Analyst
+- [x] Risk Analyst
+- [x] Investment Strategist
+- [x] Multi-agent workflow
+- [x] Specialist report synthesis
+- [x] Final structured investment research report
 
-### Phase 4 - Advanced Research
+### Phase 4 - API & Frontend
 
-- [ ] Historical financial analysis
-- [ ] News research
-- [ ] Peer comparison
-- [ ] RAG
-- [ ] Evidence-backed citations
+- [ ] FastAPI backend
+- [ ] REST endpoints for research pipeline
+- [ ] Structured API responses (JSON)
+- [ ] Frontend or report export
+- [ ] Authentication
+- [ ] Deployment
 
 ### Phase 5 - Production
 
