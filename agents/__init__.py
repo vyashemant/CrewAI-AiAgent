@@ -13,3 +13,8 @@ from .investment_strategist import (
     create_investment_strategy_task,
     InvestmentStrategy,
 )
+
+from .investment_research_report import (
+    InvestmentResearchReport,
+    build_investment_research_report,
+)

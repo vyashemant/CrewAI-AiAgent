@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dotenv import load_dotenv
@@ -32,9 +33,9 @@ from agents.investment_strategist import (
     create_investment_strategy_task,
 )
 
-# ============================================================
-# 1. ENVIRONMENT CONFIGURATION
-# ============================================================
+from agents.investment_research_report import (
+    build_investment_research_report,
+)
 
 load_dotenv()
 
@@ -1044,7 +1045,29 @@ if __name__ == "__main__":
     strategy = strategy_result.pydantic
 
     # --------------------------------------------------------
-    # STEP 6: DISPLAY FINAL INVESTMENT STRATEGY
+    # STEP 6: BUILD FINAL INVESTMENT RESEARCH REPORT
+    # --------------------------------------------------------
+
+    research_date = datetime.date.today().isoformat()
+
+    final_report = None
+
+    if strategy is not None:
+        try:
+            final_report = build_investment_research_report(
+                company=company,
+                ticker=ticker,
+                research_date=research_date,
+                prepared=prepared,
+                specialist_results=specialist_results,
+                strategy=strategy,
+            )
+        except Exception as report_build_error:
+            print(f"\n[WARNING] Could not build InvestmentResearchReport: {report_build_error}")
+            final_report = None
+
+    # --------------------------------------------------------
+    # STEP 7: DISPLAY FINAL INVESTMENT STRATEGY (existing output)
     # --------------------------------------------------------
 
     print("\n")
@@ -1175,3 +1198,110 @@ if __name__ == "__main__":
 
     timings["total"] = time.perf_counter() - total_start
     print_pipeline_timing(timings)
+
+    # --------------------------------------------------------
+    # STEP 8: PRINT FINAL INVESTMENT RESEARCH REPORT SUMMARY
+    # --------------------------------------------------------
+
+    if final_report is not None:
+
+        print("\n")
+        print("=" * 60)
+        print("FINAL INVESTMENT RESEARCH REPORT")
+        print("=" * 60)
+
+        print(f"\nCompany:          {final_report.company}")
+        print(f"Ticker:           {final_report.ticker}")
+        print(f"Research Date:    {final_report.research_date}")
+
+        strat = final_report.investment_strategy
+
+        print("\n" + "-" * 60)
+        print("FINAL RECOMMENDATION")
+        print("-" * 60)
+        print(f"Recommendation:   {strat.recommendation}")
+        print(f"Confidence:       {strat.confidence}")
+
+        print("\n" + "-" * 60)
+        print("INVESTMENT THESIS")
+        print("-" * 60)
+        print(strat.investment_thesis)
+
+        print("\n" + "-" * 60)
+        print("FINANCIAL SUMMARY")
+        print("-" * 60)
+        fs = final_report.financial_summary
+        def _fmt(v):
+            if v is None:
+                return "Unavailable"
+            if abs(v) >= 1_000_000_000:
+                return f"${v / 1_000_000_000:.3f}B"
+            if abs(v) >= 1_000_000:
+                return f"${v / 1_000_000:.3f}M"
+            return f"${v:,.0f}"
+        print(f"  Revenue:              {_fmt(fs.revenue)}")
+        print(f"  Gross Profit:         {_fmt(fs.gross_profit)}")
+        print(f"  Operating Income:     {_fmt(fs.operating_income)}")
+        print(f"  Net Income:           {_fmt(fs.net_income)}")
+        print(f"  Operating Cash Flow:  {_fmt(fs.operating_cash_flow)}")
+        print(f"  Free Cash Flow:       {_fmt(final_report.financial_metrics.free_cash_flow)}")
+
+        print("\n" + "-" * 60)
+        print("VALUATION")
+        print("-" * 60)
+        print(strat.valuation_assessment)
+
+        print("\n" + "-" * 60)
+        print("RISK")
+        print("-" * 60)
+        print(strat.risk_assessment)
+
+        print("\n" + "-" * 60)
+        print("BULL CASE")
+        print("-" * 60)
+        print(strat.bull_case)
+
+        print("\n" + "-" * 60)
+        print("BASE CASE")
+        print("-" * 60)
+        print(strat.base_case)
+
+        print("\n" + "-" * 60)
+        print("BEAR CASE")
+        print("-" * 60)
+        print(strat.bear_case)
+
+        print("\n" + "-" * 60)
+        print("DATA LIMITATIONS")
+        print("-" * 60)
+        print(strat.information_limitations)
+
+        print("\n" + "-" * 60)
+        print("DATA SOURCES")
+        print("-" * 60)
+        ds = final_report.data_sources
+        print(f"  Market Data:          {ds.market_data}")
+        print(f"  Financial Statements: {ds.financial_statements}")
+        print(f"  News:                 {ds.news}")
+        print(f"  Metrics:              {ds.metrics}")
+        print(f"  Specialist Analysis:  {ds.specialist_analysis}")
+        print(f"  Investment Strategy:  {ds.investment_strategy}")
+
+        print("\n" + "=" * 60)
+        print(
+            f"FINAL: {strat.recommendation} | "
+            f"CONFIDENCE: {strat.confidence} | "
+            f"DATE: {final_report.research_date}"
+        )
+        print("=" * 60)
+
+        # Verify serialisation
+        try:
+            import json
+            _ = json.dumps(final_report.model_dump(), default=str)
+            print("\n[OK] final_report.model_dump() and JSON serialisation successful.")
+        except Exception as serial_err:
+            print(f"\n[WARNING] JSON serialisation failed: {serial_err}")
+
+    else:
+        print("\n[WARNING] Final investment research report could not be assembled.")
