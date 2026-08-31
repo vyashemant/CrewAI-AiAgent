@@ -286,6 +286,9 @@ CrewAI/
 |   |-- market_news_analyst.py
 |   |-- risk_analyst.py
 |   `-- valuation_analyst.py
+|-- api/
+|   |-- __init__.py
+|   `-- main.py
 |-- tools/
 |   |-- __init__.py
 |   |-- financial_data_tool.py
@@ -299,6 +302,7 @@ CrewAI/
 |-- app.py
 |-- README.md
 |-- requirements.txt
+|-- test_api.py
 |-- test_financial_metrics.py
 |-- test_financial_tool.py
 |-- test_investment_research_report.py
@@ -362,13 +366,51 @@ pip install -r requirements.txt
 
 ## Running The Project
 
-Run:
+### Command Line
+
+Run the existing pipeline:
 
 ```bash
 python app.py
 ```
 
 The current application analyzes Apple Inc. using ticker `AAPL`. You can change the `company` and `ticker` values in `app.py`.
+
+### API
+
+Start the FastAPI application:
+
+```bash
+uvicorn api.main:app --reload
+```
+
+#### Health Check
+
+```http
+GET /health
+```
+
+#### Investment Research
+
+```http
+POST /api/v1/research
+```
+
+Request example:
+```json
+{
+    "company": "Apple Inc.",
+    "ticker": "AAPL"
+}
+```
+
+The endpoint executes the pipeline and returns the structured `InvestmentResearchReport`.
+
+#### API Documentation
+
+Interactive documentation is automatically generated and available at:
+- Swagger UI: `/docs`
+- OpenAPI schema: `/openapi.json`
 
 ---
 
@@ -437,12 +479,14 @@ The `test_investment_research_report.py` test uses only mock data — no live AP
 
 ### Phase 4 - API & Frontend
 
-- [ ] FastAPI backend
-- [ ] REST endpoints for research pipeline
-- [ ] Structured API responses (JSON)
-- [ ] Frontend or report export
-- [ ] Authentication
-- [ ] Deployment
+- [x] 4.1 FastAPI Foundation
+- [ ] 4.2 API response and service-layer refinement
+- [ ] 4.3 Frontend architecture
+- [ ] 4.4 Investment research dashboard
+- [ ] 4.5 Report visualization
+- [ ] 4.6 Loading/progress UX
+- [ ] 4.7 Error handling and validation improvements
+- [ ] 4.8 Report export/share functionality
 
 ### Phase 5 - Production
 

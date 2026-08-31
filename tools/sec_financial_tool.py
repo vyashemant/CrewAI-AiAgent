@@ -191,6 +191,70 @@ class SECFinancialDataTool(BaseTool):
         return None
 
     # ========================================================
+    # EXTRACT HISTORICAL FACTS
+    # ========================================================
+
+    def _extract_historical_fact(
+        self,
+        facts,
+        taxonomy,
+        concepts,
+        unit="USD",
+        limit=5
+    ):
+        taxonomy_data = facts.get("facts", {}).get(taxonomy, {})
+
+        for concept in concepts:
+            if concept not in taxonomy_data:
+                continue
+
+            units = taxonomy_data[concept].get("units", {})
+            values = units.get(unit)
+
+            if not values:
+                continue
+
+            # Get annual 10-K facts first
+            annual_values = [
+                item for item in values if item.get("form") == "10-K" and item.get("fy") is not None
+            ]
+
+            if not annual_values:
+                continue
+
+            # Sort by fiscal year and filing date (to get the latest revision for each year)
+            annual_values = sorted(
+                annual_values,
+                key=lambda x: (x.get("fy"), x.get("filed", ""))
+            )
+
+            # Deduplicate by fiscal year (take the latest filed value for each year)
+            fy_dict = {}
+            for item in annual_values:
+                fy_dict[item.get("fy")] = {
+                    "fy": item.get("fy"),
+                    "value": item.get("val"),
+                    "unit": unit,
+                    "form": item.get("form"),
+                    "filed": item.get("filed"),
+                    "start": item.get("start"),
+                    "end": item.get("end")
+                }
+
+            # Sort fiscal years ascending
+            sorted_fys = sorted(list(fy_dict.keys()))
+
+            # Take up to the last `limit` years
+            recent_fys = sorted_fys[-limit:]
+
+            history = [fy_dict[fy] for fy in recent_fys]
+
+            if history:
+                return history
+
+        return []
+
+    # ========================================================
     # TOOL EXECUTION
     # ========================================================
 
@@ -337,6 +401,59 @@ class SECFinancialDataTool(BaseTool):
                 current_debt,
                 non_current_debt
             )
+
+            # ------------------------------------------------
+            # HISTORICAL FACTS (UP TO 5 YEARS)
+            # ------------------------------------------------
+            
+            hist_revenue = self._extract_historical_fact(facts, "us-gaap", ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues"])
+            hist_net_income = self._extract_historical_fact(facts, "us-gaap", ["NetIncomeLoss"])
+            hist_gross_profit = self._extract_historical_fact(facts, "us-gaap", ["GrossProfit"])
+            hist_operating_income = self._extract_historical_fact(facts, "us-gaap", ["OperatingIncomeLoss"])
+            hist_assets = self._extract_historical_fact(facts, "us-gaap", ["Assets"])
+            hist_liabilities = self._extract_historical_fact(facts, "us-gaap", ["Liabilities"])
+            hist_equity = self._extract_historical_fact(facts, "us-gaap", ["StockholdersEquity"])
+            hist_cash = self._extract_historical_fact(facts, "us-gaap", ["CashAndCashEquivalentsAtCarryingValue"])
+            
+            # For debt, we need to extract current and non-current separately and combine them if possible
+            hist_current_debt = self._extract_historical_fact(facts, "us-gaap", ["LongTermDebtCurrent"])
+            hist_non_current_debt = self._extract_historical_fact(facts, "us-gaap", ["LongTermDebtNoncurrent"])
+            hist_operating_cash_flow = self._extract_historical_fact(facts, "us-gaap", ["NetCashProvidedByUsedInOperatingActivities"])
+            hist_capital_expenditure = self._extract_historical_fact(facts, "us-gaap", ["PaymentsToAcquirePropertyPlantAndEquipment"])
+            
+            # Build combined historical debt if both exist for a given fy
+            hist_total_debt = []
+            cur_map = {item["fy"]: item for item in hist_current_debt}
+            non_cur_map = {item["fy"]: item for item in hist_non_current_debt}
+            
+            for fy in sorted(set(list(cur_map.keys()) + list(non_cur_map.keys()))):
+                c_item = cur_map.get(fy)
+                nc_item = non_cur_map.get(fy)
+                if c_item is not None and nc_item is not None:
+                    base = c_item if (c_item.get("filed") or "") > (nc_item.get("filed") or "") else nc_item
+                    hist_total_debt.append({
+                        "fy": fy,
+                        "value": c_item["value"] + nc_item["value"],
+                        "unit": base.get("unit"),
+                        "form": base.get("form"),
+                        "filed": base.get("filed"),
+                        "start": base.get("start"),
+                        "end": base.get("end")
+                    })
+
+            historical_financials = {
+                "revenue": hist_revenue,
+                "gross_profit": hist_gross_profit,
+                "operating_income": hist_operating_income,
+                "net_income": hist_net_income,
+                "assets": hist_assets,
+                "liabilities": hist_liabilities,
+                "equity": hist_equity,
+                "cash": hist_cash,
+                "total_debt": hist_total_debt,
+                "operating_cash_flow": hist_operating_cash_flow,
+                "capital_expenditure": [{**item, "value": -abs(item["value"])} for item in hist_capital_expenditure]
+            }
 
             # ========================================================
             # NORMALIZED FINANCIAL DATA
@@ -492,7 +609,8 @@ class SECFinancialDataTool(BaseTool):
                 "financial_data": {
                     **raw_financial_data,
                     "raw": raw_financial_data,
-                    "normalized": normalized_financial_data
+                    "normalized": normalized_financial_data,
+                    "historical": historical_financials
                 }
 
             }

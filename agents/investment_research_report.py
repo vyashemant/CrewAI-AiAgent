@@ -19,7 +19,7 @@ Design principles
 
 import ast
 from datetime import date
-from typing import Optional
+from typing import Optional, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -352,6 +352,87 @@ class DataSources(BaseModel):
 
 
 # ============================================================
+# HISTORICAL ANALYSIS & TRENDS
+# ============================================================
+
+class TrendSummary(BaseModel):
+    revenue_trend: str = Field(default="Unavailable")
+    net_income_trend: str = Field(default="Unavailable")
+    debt_trend: str = Field(default="Unavailable")
+    gross_margin_trend: str = Field(default="Unavailable")
+    operating_margin_trend: str = Field(default="Unavailable")
+    net_margin_trend: str = Field(default="Unavailable")
+    revenue_cagr: Optional[float] = Field(default=None)
+    net_income_cagr: Optional[float] = Field(default=None)
+
+class HistoricalFinancialPoint(BaseModel):
+    fy: int
+    value: float
+    unit: Optional[str] = Field(default=None)
+    form: Optional[str] = Field(default=None)
+    filed: Optional[str] = Field(default=None)
+    start: Optional[str] = Field(default=None)
+    end: Optional[str] = Field(default=None)
+
+class HistoricalFinancials(BaseModel):
+    revenue: Optional[list[HistoricalFinancialPoint]] = Field(default=None)
+    gross_profit: Optional[list[HistoricalFinancialPoint]] = Field(default=None)
+    operating_income: Optional[list[HistoricalFinancialPoint]] = Field(default=None)
+    net_income: Optional[list[HistoricalFinancialPoint]] = Field(default=None)
+    assets: Optional[list[HistoricalFinancialPoint]] = Field(default=None)
+    liabilities: Optional[list[HistoricalFinancialPoint]] = Field(default=None)
+    stockholders_equity: Optional[list[HistoricalFinancialPoint]] = Field(default=None)
+    cash: Optional[list[HistoricalFinancialPoint]] = Field(default=None)
+    total_debt: Optional[list[HistoricalFinancialPoint]] = Field(default=None)
+    operating_cash_flow: Optional[list[HistoricalFinancialPoint]] = Field(default=None)
+    capital_expenditure: Optional[list[HistoricalFinancialPoint]] = Field(default=None)
+
+class HistoricalAnalysis(BaseModel):
+    historical_financials: Optional[HistoricalFinancials] = Field(default=None)
+    trend_summary: TrendSummary = Field(default_factory=TrendSummary)
+
+
+# ============================================================
+# EVIDENCE REGISTRY
+# ============================================================
+
+class EvidenceItem(BaseModel):
+    """
+    Structured item making research facts traceable to their source.
+    """
+    evidence_id: str = Field(description="Deterministic unique ID for this evidence item within the report.")
+    evidence_type: Literal[
+        "financial_fact",
+        "market_data",
+        "valuation_metric",
+        "calculated_metric",
+        "news",
+        "reporting_metadata",
+        "historical_financial"
+    ] = Field(description="Categorical type of the evidence.")
+    source: str = Field(description="Origin source of the data.")
+    title: Optional[str] = Field(default=None, description="Optional title, e.g., for news articles.")
+    claim: str = Field(description="What fact this item asserts.")
+    value: Optional[Any] = Field(default=None, description="The numerical or textual value.")
+    unit: Optional[str] = Field(default=None, description="Unit of measurement if applicable (e.g., USD, %).")
+    period: Optional[str] = Field(default=None, description="Reporting period if applicable.")
+    url: Optional[str] = Field(default=None, description="Source URL if applicable.")
+    published_at: Optional[str] = Field(default=None, description="Publication timestamp if applicable.")
+    metadata: dict = Field(default_factory=dict, description="Additional context or metadata.")
+
+
+class EvidenceRegistry(BaseModel):
+    """
+    Deterministically constructed registry of factual claims 
+    powering the investment research report.
+    """
+    evidence: list[EvidenceItem] = Field(
+        default_factory=list,
+        description="List of traceable evidence items."
+    )
+
+
+# ============================================================
 # INVESTMENT RESEARCH REPORT  (canonical assembled object)
 # ============================================================
 
@@ -425,6 +506,21 @@ class InvestmentResearchReport(BaseModel):
     data_sources: DataSources = Field(
         default_factory=DataSources,
         description="Record of data provenance for each report section."
+    )
+    
+    evidence_registry: Optional[EvidenceRegistry] = Field(
+        default=None,
+        description="Structured registry making factual claims traceable."
+    )
+    
+    historical_analysis: Optional[HistoricalAnalysis] = Field(
+        default=None,
+        description="Multi-year trend analysis based on historical financials."
+    )
+    
+    trend_summary: Optional[TrendSummary] = Field(
+        default=None,
+        description="High-level trend labels for historical metrics."
     )
 
 
@@ -597,6 +693,9 @@ def build_investment_research_report(
     prepared: dict,
     specialist_results: dict,
     strategy: InvestmentStrategy,
+    evidence_registry: Optional[EvidenceRegistry] = None,
+    historical_analysis: Optional[HistoricalAnalysis] = None,
+    trend_summary: Optional[TrendSummary] = None,
 ) -> "InvestmentResearchReport":
     """
     Assemble the final InvestmentResearchReport from pipeline outputs.
@@ -684,4 +783,7 @@ def build_investment_research_report(
         specialist_reports=specialist_reports,
         investment_strategy=strategy,
         data_sources=DataSources(),
+        evidence_registry=evidence_registry,
+        historical_analysis=historical_analysis,
+        trend_summary=trend_summary,
     )

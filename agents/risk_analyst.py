@@ -111,6 +111,13 @@ def create_risk_analysis_task(agent):
             "Do not provide a BUY, SELL, or HOLD recommendation. "
             "Do not provide portfolio allocation advice. "
             "Your responsibility is risk analysis only."
+        
+
+            "CRITICAL EVIDENCE RULES:\n"
+            "1. You must use the provided JSON CanonicalResearchSnapshot as your sole source of numerical truth.\n"
+            "2. If a metric is missing, null, or marked 'Unavailable' in the snapshot, you MUST state it is unavailable. Do NOT calculate it yourself.\n"
+            "3. Do NOT invent or estimate any missing data.\n"
+            "4. Distinguish between 'retrieved' facts (from external sources) and 'calculated' facts (from the Python Metrics Engine) as indicated in the JSON.\n"
         ),
 
         expected_output=(
