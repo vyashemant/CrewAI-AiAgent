@@ -4,3 +4,6 @@ google-genai
 yfinance
 pandas
 requests
+fastapi
+uvicorn
+httpx

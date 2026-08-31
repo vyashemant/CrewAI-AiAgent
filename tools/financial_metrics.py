@@ -261,6 +261,77 @@ class FinancialMetricsEngine:
         )
 
     # ========================================================
+    # VALUATION METRICS
+    # ========================================================
+
+    @staticmethod
+    def trailing_pe(
+        market_cap,
+        net_income
+    ):
+        if not is_valid_number(market_cap) or not is_valid_number(net_income) or net_income <= 0:
+            return None
+        return market_cap / net_income
+
+    @staticmethod
+    def price_to_sales(
+        market_cap,
+        revenue
+    ):
+        if not is_valid_number(market_cap) or not is_valid_number(revenue) or revenue <= 0:
+            return None
+        return market_cap / revenue
+
+    @staticmethod
+    def price_to_fcf(
+        market_cap,
+        free_cash_flow
+    ):
+        if not is_valid_number(market_cap) or not is_valid_number(free_cash_flow) or free_cash_flow <= 0:
+            return None
+        return market_cap / free_cash_flow
+
+    @staticmethod
+    def price_to_book(
+        market_cap,
+        equity
+    ):
+        if not is_valid_number(market_cap) or not is_valid_number(equity) or equity <= 0:
+            return None
+        return market_cap / equity
+
+    @staticmethod
+    def enterprise_value(
+        market_cap,
+        total_debt,
+        cash
+    ):
+        if not is_valid_number(market_cap):
+            return None
+            
+        debt_val = total_debt if is_valid_number(total_debt) else 0
+        cash_val = cash if is_valid_number(cash) else 0
+        
+        return market_cap + debt_val - cash_val
+
+    @staticmethod
+    def ev_to_ebitda(
+        enterprise_value,
+        operating_income,
+        depreciation_and_amortization
+    ):
+        if not is_valid_number(enterprise_value) or not is_valid_number(operating_income):
+            return None
+            
+        da = depreciation_and_amortization if is_valid_number(depreciation_and_amortization) else 0
+        ebitda = operating_income + da
+        
+        if ebitda <= 0:
+            return None
+            
+        return enterprise_value / ebitda
+
+    # ========================================================
     # COMPLETE METRICS
     # ========================================================
 
@@ -408,3 +479,45 @@ class FinancialMetricsEngine:
                 "stockholders_equity"
             )
         )
+
+    def calculate_all_metrics(
+        self,
+        financial_data,
+        market_data
+    ):
+        """
+        Calculate fundamental and valuation metrics from normalized SEC data 
+        and Yahoo Finance market data.
+        """
+        revenue = financial_data.get("revenue")
+        net_income = financial_data.get("net_income")
+        operating_income = financial_data.get("operating_income")
+        equity = financial_data.get("stockholders_equity")
+        operating_cash_flow = financial_data.get("operating_cash_flow")
+        capital_expenditure = financial_data.get("capital_expenditure")
+        cash = financial_data.get("cash")
+        total_debt = financial_data.get("total_debt")
+        
+        market_cap = market_data.get("market_cap") if isinstance(market_data, dict) else None
+        
+        # Calculate base metrics using existing calculate_from_sec_data
+        base_metrics = self.calculate_from_sec_data(financial_data)
+        
+        fcf = base_metrics.get("free_cash_flow")
+        
+        ev = self.enterprise_value(market_cap, total_debt, cash)
+        # Note: D&A is often not separately normalized in SEC data here, so we pass 0 for now.
+        ev_ebitda = self.ev_to_ebitda(ev, operating_income, 0)
+        
+        valuation_metrics = {
+            "trailing_pe": self.trailing_pe(market_cap, net_income),
+            "price_to_sales": self.price_to_sales(market_cap, revenue),
+            "price_to_fcf": self.price_to_fcf(market_cap, fcf),
+            "price_to_book": self.price_to_book(market_cap, equity),
+            "enterprise_value": ev,
+            "ev_to_ebitda": ev_ebitda
+        }
+        
+        # Merge them
+        base_metrics.update(valuation_metrics)
+        return base_metrics

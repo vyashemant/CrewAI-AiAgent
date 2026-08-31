@@ -1,4 +1,4 @@
-﻿import os
+import os
 import json
 
 from dotenv import load_dotenv
@@ -374,6 +374,8 @@ result = crew.kickoff(
         "market_news_analyst_report": MARKET_NEWS_ANALYST_REPORT,
         "valuation_analyst_report": VALUATION_ANALYST_REPORT,
         "risk_analyst_report": RISK_ANALYST_REPORT,
+        "consistency_report": '{"status": "pass", "issues": []}',
+        "canonical_evidence": "{}"
     }
 )
 

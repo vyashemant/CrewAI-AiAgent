@@ -250,8 +250,9 @@ def create_investment_strategist(llm: LLM) -> Agent:
             "7. Your recommendation must be one of: BUY, HOLD, SELL.\n"
 
             "8. Your confidence must be one of: LOW, MEDIUM, HIGH.\n\n"
+            "9. If the Consistency Report flags contradictions, you MUST address them and prioritise the Canonical Evidence Snapshot.\n\n"
 
-            "9. Never provide personalised portfolio allocation advice."
+            "10. Never provide personalised portfolio allocation advice."
         ),
 
         llm=llm,
@@ -303,6 +304,14 @@ def create_investment_strategy_task(agent: Agent) -> Task:
             f"{separator}\n"
             "{risk_analyst_report}\n\n"
 
+
+            f"{separator}\n"
+            "CANONICAL RESEARCH EVIDENCE AND CONSISTENCY REPORT\n"
+            f"{separator}\n"
+            "Canonical Evidence Snapshot:\n"
+            "{canonical_evidence}\n\n"
+            "Consistency Report (Validator Results):\n"
+            "{consistency_report}\n\n"
             f"{separator}\n"
             "SYNTHESIS INSTRUCTIONS\n"
             f"{separator}\n\n"

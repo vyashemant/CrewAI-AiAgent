@@ -12,6 +12,11 @@ from tools.market_data_tool import MarketDataTool
 from tools.sec_financial_tool import SECFinancialDataTool
 from tools.news_data_tool import NewsDataTool
 from tools.financial_metrics import FinancialMetricsEngine
+from tools.historical_metrics import HistoricalTrendEngine
+
+from utils.consistency import build_canonical_snapshot, validate_consistency
+from utils.evidence import build_evidence_registry
+import json
 
 from agents.market_news_analyst import (
     create_market_news_analyst,
@@ -35,6 +40,9 @@ from agents.investment_strategist import (
 
 from agents.investment_research_report import (
     build_investment_research_report,
+    HistoricalAnalysis,
+    HistoricalFinancials,
+    TrendSummary
 )
 
 load_dotenv()
@@ -124,7 +132,8 @@ def build_financial_research_context(
     ticker,
     market_result,
     sec_result,
-    calculated_metrics
+    calculated_metrics,
+    trends_result=None
 ):
     """
     Build the validated context that the analyst should interpret.
@@ -244,7 +253,13 @@ def build_financial_research_context(
         + "\n\n"
 
         "Raw SEC Evidence\n"
-        f"{financial_data.get('raw')}"
+        f"{financial_data.get('raw')}\n\n"
+
+        "Historical Trends & Labels\n"
+        f"{json.dumps(trends_result.get('labels', {}), indent=2) if trends_result else 'Unavailable'}\n\n"
+        
+        "Historical CAGR Metrics\n"
+        f"{json.dumps(trends_result.get('metrics', {}), indent=2) if trends_result else 'Unavailable'}"
     )
 
 
@@ -299,7 +314,8 @@ def build_combined_research_context(
     sec_result,
     calculated_metrics,
     financial_data_result,
-    news_result
+    news_result,
+    trends_result=None
 ):
     """
     Build the combined research context that all three specialist
@@ -311,7 +327,8 @@ def build_combined_research_context(
         ticker,
         market_result,
         sec_result,
-        calculated_metrics
+        calculated_metrics,
+        trends_result=trends_result
     )
 
     valuation_section = build_valuation_metrics_section(
@@ -436,7 +453,8 @@ def build_specialist_research_contexts(ticker, prepared):
         ticker=ticker,
         market_result=prepared["market_data"],
         sec_result=prepared["sec_data"],
-        calculated_metrics=prepared["metrics"]
+        calculated_metrics=prepared["metrics"],
+        trends_result=prepared.get("trends", {})
     ) + build_valuation_metrics_section(
         prepared["financial_data"]
     )
@@ -792,12 +810,24 @@ def prepare_financial_research(ticker):
         normalized
     )
 
+    historical_data = sec_data.get(
+        "financial_data",
+        {}
+    ).get(
+        "historical",
+        {}
+    )
+    
+    trend_engine = HistoricalTrendEngine(historical_data)
+    trends = trend_engine.get_trends()
+
     return {
         "market_data": market_data,
         "sec_data": sec_data,
         "financial_data": financial_data,
         "news_data": news_data,
-        "metrics": metrics
+        "metrics": metrics,
+        "trends": trends
     }
 
 
@@ -941,22 +971,13 @@ def print_pipeline_timing(timings):
 # 13. RUN RESEARCH PIPELINE
 # ============================================================
 
-if __name__ == "__main__":
-
+def run_investment_research(company: str, ticker: str):
+    """
+    Execute the full investment research pipeline for a given company and ticker.
+    Returns the canonical InvestmentResearchReport and a timings dictionary.
+    """
     total_start = time.perf_counter()
     timings = {}
-
-    company = "Apple Inc."
-    ticker = "AAPL"
-
-    print("\n")
-    print("=" * 80)
-    print("AI INVESTMENT RESEARCH TEAM")
-    print("=" * 80)
-
-    # --------------------------------------------------------
-    # STEP 1: RETRIEVE AND PREPARE RESEARCH DATA
-    # --------------------------------------------------------
 
     print("\n")
     print("=" * 80)
@@ -973,10 +994,6 @@ if __name__ == "__main__":
         prepared=prepared
     )
     timings["context_preparation"] = time.perf_counter() - stage_start
-
-    # --------------------------------------------------------
-    # STEP 2: RUN SPECIALIST ANALYSTS
-    # --------------------------------------------------------
 
     print("\n")
     print("=" * 80)
@@ -995,10 +1012,6 @@ if __name__ == "__main__":
     )
     timings["parallel_specialist_stage"] = time.perf_counter() - stage_start
 
-    # --------------------------------------------------------
-    # STEP 3: EXTRACT SPECIALIST REPORTS
-    # --------------------------------------------------------
-
     print("\n")
     print("=" * 80)
     print("STEP 3 - COLLECTING SPECIALIST REPORTS")
@@ -1012,13 +1025,23 @@ if __name__ == "__main__":
     for name, result in specialist_results.items():
         timings[name] = result["elapsed"]
 
-    # --------------------------------------------------------
-    # STEP 4: RUN INVESTMENT STRATEGIST
-    # --------------------------------------------------------
+    print("\n")
+    print("=" * 80)
+    print("STEP 4 - VALIDATING RESEARCH CONSISTENCY")
+    print("=" * 80)
+
+    canonical_evidence = build_canonical_snapshot(ticker, prepared)
+    consistency_report = validate_consistency(
+        specialist_results=specialist_results,
+        canonical_evidence=canonical_evidence
+    )
+
+    print("\nConsistency Validation:")
+    print(json.dumps(consistency_report, indent=2))
 
     print("\n")
     print("=" * 80)
-    print("STEP 4 - RUNNING INVESTMENT STRATEGIST")
+    print("STEP 5 - RUNNING INVESTMENT STRATEGIST")
     print("=" * 80)
 
     stage_start = time.perf_counter()
@@ -1026,20 +1049,21 @@ if __name__ == "__main__":
         inputs={
             "company": company,
             "ticker": ticker,
-
             "financial_analyst_report": financial_report,
-
             "market_news_analyst_report": market_news_report,
-
             "valuation_analyst_report": valuation_report,
-
-            "risk_analyst_report": risk_report
+            "risk_analyst_report": risk_report,
+            "canonical_evidence": canonical_evidence,
+            "consistency_report": json.dumps(
+                consistency_report,
+                indent=2
+            )
         }
     )
     timings["investment_strategist"] = time.perf_counter() - stage_start
 
     # --------------------------------------------------------
-    # STEP 5: EXTRACT STRUCTURED STRATEGY
+    # STEP 6: EXTRACT STRUCTURED STRATEGY
     # --------------------------------------------------------
 
     strategy = strategy_result.pydantic
@@ -1054,6 +1078,35 @@ if __name__ == "__main__":
 
     if strategy is not None:
         try:
+            evidence_registry = build_evidence_registry(canonical_evidence)
+            
+            trends = prepared.get("trends", {})
+            labels = trends.get("labels", {})
+            metrics_cagr = trends.get("metrics", {})
+            
+            trend_summary = TrendSummary(
+                revenue_trend=labels.get("Revenue Trend", "Unavailable"),
+                net_income_trend=labels.get("Net Income Trend", "Unavailable"),
+                debt_trend=labels.get("Debt Trend", "Unavailable"),
+                gross_margin_trend=labels.get("Gross Margin Trend", "Unavailable"),
+                operating_margin_trend=labels.get("Operating Margin Trend", "Unavailable"),
+                net_margin_trend=labels.get("Net Margin Trend", "Unavailable"),
+                revenue_cagr=metrics_cagr.get("revenue_cagr"),
+                net_income_cagr=metrics_cagr.get("net_income_cagr")
+            )
+            
+            historical_data = prepared.get("sec_data", {}).get("financial_data", {}).get("historical", {})
+            hf_kwargs = {}
+            for k, v in historical_data.items():
+                if isinstance(v, list) and v:
+                    hf_kwargs[k] = v
+            historical_financials = HistoricalFinancials(**hf_kwargs) if hf_kwargs else None
+            
+            historical_analysis = HistoricalAnalysis(
+                historical_financials=historical_financials,
+                trend_summary=trend_summary
+            )
+            
             final_report = build_investment_research_report(
                 company=company,
                 ticker=ticker,
@@ -1061,13 +1114,38 @@ if __name__ == "__main__":
                 prepared=prepared,
                 specialist_results=specialist_results,
                 strategy=strategy,
+                evidence_registry=evidence_registry,
+                historical_analysis=historical_analysis,
+                trend_summary=trend_summary,
             )
         except Exception as report_build_error:
             print(f"\n[WARNING] Could not build InvestmentResearchReport: {report_build_error}")
             final_report = None
 
+    timings["total"] = time.perf_counter() - total_start
+    return final_report, strategy_result, timings
+
+
+if __name__ == "__main__":
+
+    company = "Apple Inc."
+    ticker = "AAPL"
+
+    print("\n")
+    print("=" * 80)
+    print("AI INVESTMENT RESEARCH TEAM")
+    print("=" * 80)
+
+    final_report, strategy_result, timings = run_investment_research(company, ticker)
+    
+    if final_report is not None:
+        strategy = final_report.investment_strategy
+    else:
+        strategy = strategy_result.pydantic if strategy_result else None
+
     # --------------------------------------------------------
     # STEP 7: DISPLAY FINAL INVESTMENT STRATEGY (existing output)
+    # --------------------------------------------------------\n    # STEP 7: DISPLAY FINAL INVESTMENT STRATEGY (existing output)
     # --------------------------------------------------------
 
     print("\n")
@@ -1196,7 +1274,6 @@ if __name__ == "__main__":
         )
         print("=" * 80)
 
-    timings["total"] = time.perf_counter() - total_start
     print_pipeline_timing(timings)
 
     # --------------------------------------------------------
