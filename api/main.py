@@ -3,26 +3,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
 import logging
-import uuid
-import json
-from datetime import datetime, timezone
+from contextlib import asynccontextmanager
 
-from app import run_investment_research
 from agents.investment_research_report import InvestmentResearchReport
-import db.database as db
+from services.research_service import submit_research_job, get_job_history, get_research_job
 
 # Setup minimal logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    import db.database as db
+    db.init_db()
+    yield
+
 app = FastAPI(
     title="AI Investment Research API",
     description="API backend for the AI Investment Research Engine.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
-
-# Initialize database
-db.init_db()
 
 # Basic CORS middleware for development
 app.add_middleware(
@@ -70,67 +71,17 @@ class ResearchHistoryItem(BaseModel):
 class ResearchHistoryResponse(BaseModel):
     research: List[ResearchHistoryItem]
 
-def background_research_task(job_id: str, company: str, ticker: str):
-    db.update_job(job_id=job_id, status="running")
-            
-    try:
-        logger.info(f"Background research started for {company} ({ticker}), Job ID: {job_id}")
-        
-        result = run_investment_research(
-            company=company,
-            ticker=ticker
-        )
-        
-        if isinstance(result, tuple) and len(result) >= 1:
-            report = result[0]
-        else:
-            report = result
-
-        if report is None:
-            raise RuntimeError("Research pipeline failed to produce a valid report.")
-            
-        # Serialize the Pydantic model
-        if hasattr(report, "model_dump_json"):
-            result_json = report.model_dump_json()
-        else:
-            result_json = report.json()
-            
-        db.update_job(
-            job_id=job_id, 
-            status="completed", 
-            result_json=result_json,
-            completed_at=datetime.now(timezone.utc).isoformat()
-        )
-                
-        logger.info(f"Background research complete for Job ID: {job_id}")
-        
-    except Exception as e:
-        logger.error(f"Research failure for Job ID {job_id}: {str(e)}", exc_info=True)
-        db.update_job(
-            job_id=job_id,
-            status="failed",
-            error="Research job failed.",
-            completed_at=datetime.now(timezone.utc).isoformat()
-        )
-
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 @app.post("/api/v1/research", status_code=status.HTTP_202_ACCEPTED, response_model=ResearchJobResponse)
 def research(request: ResearchRequest, background_tasks: BackgroundTasks):
-    job_id = str(uuid.uuid4())
-    created_at = datetime.now(timezone.utc).isoformat()
-    
-    db.create_job(
-        job_id=job_id,
-        company=request.company,
-        ticker=request.ticker,
-        status="queued",
-        created_at=created_at
+    job_id, created_at = submit_research_job(
+        company=request.company, 
+        ticker=request.ticker, 
+        background_tasks=background_tasks
     )
-        
-    background_tasks.add_task(background_research_task, job_id, request.company, request.ticker)
     
     return ResearchJobResponse(
         job_id=job_id,
@@ -139,8 +90,8 @@ def research(request: ResearchRequest, background_tasks: BackgroundTasks):
     )
 
 @app.get("/api/v1/research/history", response_model=ResearchHistoryResponse)
-def get_research_history(limit: int = Query(20, ge=1, le=100)):
-    jobs = db.list_jobs(limit=limit)
+def get_research_history_route(limit: int = Query(20, ge=1, le=100)):
+    jobs = get_job_history(limit=limit)
     history_items = []
     for job in jobs:
         history_items.append(ResearchHistoryItem(
@@ -155,24 +106,18 @@ def get_research_history(limit: int = Query(20, ge=1, le=100)):
     return ResearchHistoryResponse(research=history_items)
 
 @app.get("/api/v1/research/{job_id}", response_model=ResearchJobResponse)
-def get_research_status(job_id: str):
-    job_data = db.get_job(job_id)
+def get_research_status_route(job_id: str):
+    job_data = get_research_job(job_id)
     if not job_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Research job not found."
         )
         
-    result = None
-    if job_data.get("result_json"):
-        # Deserialize from JSON
-        result_dict = json.loads(job_data["result_json"])
-        result = InvestmentResearchReport(**result_dict)
-        
     return ResearchJobResponse(
         job_id=job_data["job_id"],
         status=job_data["status"],
-        result=result,
+        result=job_data.get("result"),
         error=job_data.get("error"),
         created_at=job_data["created_at"],
         completed_at=job_data.get("completed_at")

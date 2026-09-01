@@ -111,7 +111,7 @@ def test_research_endpoint_success(monkeypatch):
         # Returning exactly what app.py returns
         return (report, None, {})
 
-    monkeypatch.setattr("api.main.run_investment_research", mock_run_investment_research)
+    monkeypatch.setattr("services.research_service.run_investment_research", mock_run_investment_research)
 
     response = client.post(
         "/api/v1/research", 
@@ -161,7 +161,7 @@ def test_research_endpoint_failure(monkeypatch):
     def mock_run_investment_research_failure(company, ticker):
         raise RuntimeError("Mock failure")
 
-    monkeypatch.setattr("api.main.run_investment_research", mock_run_investment_research_failure)
+    monkeypatch.setattr("services.research_service.run_investment_research", mock_run_investment_research_failure)
 
     response = client.post(
         "/api/v1/research", 
