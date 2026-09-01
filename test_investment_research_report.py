@@ -90,6 +90,12 @@ MOCK_SEC_DATA = {
             "total_debt": 90678000000.0,
             "operating_cash_flow": 111482000000.0,
             "capital_expenditure": -12715000000.0,
+        },
+        "historical": {
+            "stockholders_equity": [
+                {"fy": 2023, "value": 100.0, "unit": "USD"},
+                {"fy": 2024, "value": 120.0, "unit": "USD"}
+            ]
         }
     },
 }
@@ -241,6 +247,16 @@ MOCK_RESEARCH_DATE = date.today().isoformat()
 
 def make_report() -> InvestmentResearchReport:
     """Build and return the report using mock data."""
+    
+    historical_data = MOCK_PREPARED.get("sec_data", {}).get("financial_data", {}).get("historical", {})
+    hf_kwargs = {}
+    for k, v in historical_data.items():
+        if isinstance(v, list) and v:
+            hf_kwargs[k] = v
+    from agents.investment_research_report import HistoricalFinancials, HistoricalAnalysis
+    historical_financials = HistoricalFinancials(**hf_kwargs) if hf_kwargs else None
+    historical_analysis = HistoricalAnalysis(historical_financials=historical_financials)
+    
     return build_investment_research_report(
         company="Apple Inc.",
         ticker="AAPL",
@@ -248,6 +264,7 @@ def make_report() -> InvestmentResearchReport:
         prepared=MOCK_PREPARED,
         specialist_results=MOCK_SPECIALIST_RESULTS,
         strategy=MOCK_STRATEGY,
+        historical_analysis=historical_analysis
     )
 
 
@@ -487,6 +504,22 @@ def test_14_none_metrics_graceful():
     print("PASS  test_14_none_metrics_graceful")
 
 
+def test_15_historical_stockholders_equity():
+    """Verify that historical stockholders_equity is preserved in final report."""
+    report = make_report()
+    hist = report.historical_analysis.historical_financials
+    assert hist is not None
+    assert hist.stockholders_equity is not None
+    assert len(hist.stockholders_equity) == 2
+    assert hist.stockholders_equity[0].value == 100.0
+    assert hist.stockholders_equity[1].value == 120.0
+    
+    # Verify serialization
+    dumped = report.model_dump()
+    assert "stockholders_equity" in dumped["historical_analysis"]["historical_financials"]
+    print("PASS  test_15_historical_stockholders_equity")
+
+
 # ============================================================
 # RUN ALL TESTS
 # ============================================================
@@ -508,6 +541,7 @@ if __name__ == "__main__":
         test_12_missing_market_data_graceful,
         test_13_none_strategy_raises,
         test_14_none_metrics_graceful,
+        test_15_historical_stockholders_equity,
     ]
 
     print("\n")

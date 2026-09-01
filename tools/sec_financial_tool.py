@@ -448,7 +448,7 @@ class SECFinancialDataTool(BaseTool):
                 "net_income": hist_net_income,
                 "assets": hist_assets,
                 "liabilities": hist_liabilities,
-                "equity": hist_equity,
+                "stockholders_equity": hist_equity,
                 "cash": hist_cash,
                 "total_debt": hist_total_debt,
                 "operating_cash_flow": hist_operating_cash_flow,

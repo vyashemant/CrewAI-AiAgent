@@ -7,9 +7,7 @@ from agents.investment_research_report import (
     TrendSummary
 )
 from agents.investment_strategist import (
-    InvestmentStrategy,
-    ActionPlan,
-    RiskAssessment
+    InvestmentStrategy
 )
 
 # Mock data
@@ -27,36 +25,32 @@ historical_analysis = HistoricalAnalysis(
 
 final_report = build_investment_research_report(
     company="AAPL",
-    market_data={},
-    financial_data={},
-    historical_analysis=historical_analysis,
-    evidence_registry={"HIST-001": {"evidence_id": "HIST-001"}},
-    financial_analysis="Financial analysis text",
-    market_analysis="Market analysis text",
-    valuation_analysis="Valuation text",
-    risk_analysis="Risk text",
+    ticker="AAPL",
+    research_date="2026-09-01",
+    prepared={"market_data": "", "sec_data": {}, "news_data": "", "metrics": {}},
+    specialist_results={},
     strategy=InvestmentStrategy(
+        investment_thesis="Thesis",
+        fundamental_assessment="Fund",
+        market_and_news_assessment="Market",
+        valuation_assessment="Val",
+        risk_assessment="Risk",
+        bull_case="Bull",
+        base_case="Base",
+        bear_case="Bear",
+        key_catalysts=[],
+        key_risks=[],
+        thesis_change_triggers=[],
+        company_quality="Good",
+        valuation_view="View",
         recommendation="HOLD",
         confidence="HIGH",
-        investment_horizon="1 Year",
-        catalysts=[],
         evidence_summary="summary text",
-        action_plan=ActionPlan(
-            primary_action="Hold",
-            entry_point=None,
-            target_price=None,
-            stop_loss=None,
-            position_size=None,
-            alternatives=None
-        ),
-        risk_assessment=RiskAssessment(
-            risk_level="Medium",
-            downside_risk="Downside",
-            upside_potential="Upside",
-            key_risks=[]
-        )
+        information_limitations="None",
+        contradictions_detected="None"
     ),
-    job_id="test-job"
+    historical_analysis=historical_analysis,
+    evidence_registry={"evidence": []}
 )
 
 # Serialize
