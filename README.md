@@ -1,282 +1,241 @@
-# AI Investment Research Team
+# AI Investment Research
 
-An AI investment research project built with **CrewAI**, **Google Gemini**, **yfinance**, **SEC EDGAR XBRL Company Facts API**, **Marketaux**, and **FastAPI**.
+An advanced, production-ready AI-powered equity research platform that orchestrates specialized AI agents to analyze public companies. The platform combines real-time data retrieval, deterministic financial calculations, rigorous evidence tracking, and a premium React-based financial terminal interface.
 
-The current system implements a complete multi-agent investment research pipeline with five specialized roles:
+The core architectural principle of this system is the strict separation of quantitative calculations from qualitative reasoning:
 
-- Financial Analyst
-- Market & News Analyst
-- Valuation Analyst
-- Risk Analyst
-- Investment Strategist
-
-> **Current status: Phase 4.6 complete.**
-
----
-
-## Project Goal
-
-The long-term goal is to build an AI Investment Research Team that can analyze public companies through specialized research roles and produce a comprehensive investment research report.
-
-The project is now a multi-agent system. The current implementation spans the complete research pipeline from data retrieval to the final structured investment report.
-
-## Multi-Agent Workflow
-
-```text
-User
-  |
-  v
-Research Pipeline
-  |
-  +--> Market Data Retrieval (Yahoo Finance)
-  |
-  +--> SEC Financial Data Retrieval (EDGAR)
-  |
-  +--> Python Financial Metrics Engine
-  |
-  +--> Canonical / Validated Research Context
-  |
-  +--> Financial Analyst
-  |
-  +--> Market & News Analyst
-  |
-  +--> Valuation Analyst
-  |
-  +--> Risk Analyst
-  |
-  +--> Investment Strategist
-  |
-  v
-Structured Investment Research Report
+```
+RETRIEVAL
+    ↓
+VALIDATION
+    ↓
+CALCULATION
+    ↓
+REASONING
+    ↓
+EVIDENCE
+    ↓
+PRESENTATION
 ```
 
-Specialist agents are strictly instructed **not** to independently invent numerical financial facts when validated Python/SEC context is available.
+By enforcing this flow, the platform guarantees that financial data (e.g., Gross Margins, ROE) is mathematically calculated from factual SEC filings and Yahoo Finance data, completely eliminating LLM financial hallucination. The LLM's role is strictly confined to reasoning, interpreting the deterministic data, and synthesizing investment theses.
 
 ---
 
-## Architectural Principle: Deterministic Financial Computation
-
-**LLMs are NOT responsible for deterministic financial calculations.**
-
-Python retrieves, validates, normalizes, and calculates financial metrics before the relevant context is provided to the LLM agents. 
-
-This includes:
-- revenue, gross profit, operating income, net income
-- assets, liabilities, stockholders' equity, cash, debt
-- operating cash flow, capital expenditure, free cash flow
-- margins and growth metrics
-- CAGR (Compound Annual Growth Rate)
-- debt/equity-related metrics
-- other deterministic financial calculations already present in the code
-
-**Why this architecture is important:**
-- **Reproducibility & Numerical Consistency:** Ensures the math is always correct.
-- **Reduced Hallucination Risk:** LLMs don't invent facts or calculate incorrect ratios.
-- **Separation of Concerns:** Separates computation from interpretation.
-- **Easier Testing & Debugging:** Deterministic data pipelines can be reliably tested.
-- **Stronger Evidence Traceability:** All facts can be traced to their SEC or market source.
+## Table of Contents
+1. [Overview](#1-overview)
+2. [Features](#2-features)
+3. [Architecture](#3-architecture)
+4. [Prerequisites](#4-prerequisites)
+5. [Installation & Setup](#5-installation--setup)
+6. [Configuration](#6-configuration)
+7. [Running the Application](#7-running-the-application)
+8. [API Documentation](#8-api-documentation)
+9. [Testing](#9-testing)
 
 ---
 
-## SEC Data Pipeline
+## 1. Overview
 
-The SEC Financial Data Tool retrieves official SEC EDGAR XBRL Company Facts data. It currently provides:
-- Current financial data
-- Raw financial evidence
-- Normalized financial data
-- Reporting metadata
-- Historical financial data
+The AI Investment Research platform automates deep fundamental and quantitative equity research. It is designed for developers, financial analysts, and researchers who need a structured, verifiable, and visually dense AI research tool.
 
-### Historical Financial Extraction
-Historical observations include metadata such as fiscal year, value, unit, form, filing date, period start, and period end. The historical series extracted are:
-- revenue, gross profit, operating income, net income
-- assets, liabilities, stockholders' equity, cash
-- total debt, operating cash flow, capital expenditure
+**Inputs:**
+The system accepts a standard **Company Name** (e.g., "Apple Inc.") and **Ticker Symbol** (e.g., "AAPL").
 
-Extraction behavior:
-- Focuses on annual 10-K data.
-- Grouped by fiscal year.
-- Duplicate fiscal years are resolved by taking the latest filing.
-- Sorted chronologically.
-- Limited to the latest five fiscal years.
+**Outputs:**
+A comprehensive, deeply structured JSON research report presented in a premium dark-mode dashboard. Outputs include deterministic financial snapshots, multi-scenario valuations, risk analysis, catalyst identification, and a final synthesized investment thesis with Buy/Hold/Sell recommendations.
 
 ---
 
-## Financial Metrics Engine
+## 2. Features
 
-Financial metrics are calculated by Python rather than by the LLM. 
+### AI Research
+- Orchestrates multiple specialized agent roles using **CrewAI**:
+  - `Market News Analyst`: Evaluates sentiment, macroeconomic conditions, and recent news.
+  - `Risk Analyst`: Identifies structural, competitive, and financial risks.
+  - `Valuation Analyst`: Interprets ratios, DCF inputs, and relative valuation.
+  - `Investment Strategist`: Synthesizes the final thesis, scenarios, and recommendations.
+- Powered by the **Google Gemini API** for deep qualitative reasoning.
 
-The **CAGR** calculation uses actual elapsed fiscal years (`last_fy - first_fy`). It does NOT assume that the number of observations minus one represents the elapsed time. This makes the calculation robust when there are gaps in fiscal years. Invalid CAGR cases (such as non-positive starting values) safely return `None` rather than `NaN` or Infinity. 
+### Financial & Market Data
+- Retrieves live pricing, 52-week ranges, beta, and yields via **Yahoo Finance (`yfinance`)**.
+- Retrieves primary financial statements directly from the **SEC EDGAR XBRL Company Facts API**.
+- Retrieves market news and sentiment data via **Marketaux API**.
 
-Trend labels and margin trends are also produced deterministically where implemented.
+### Deterministic Financial Calculations
+- The **Financial Metrics Engine** explicitly calculates all critical ratios prior to LLM reasoning.
+- Computes Margins (Gross, Operating, Net, FCF), Returns (ROA, ROE), Efficiency (Asset Turnover, Equity Multiplier), and Growth (CAGR).
+- Ensures no LLM hallucination of core financial mathematics.
 
----
+### Evidence & Provenance
+- Implements an **Evidence Registry** that tracks the exact source, unit, and period for every critical data point.
+- Differentiates between retrieved facts, calculated metrics, and AI-generated opinions.
 
-## Structured Report
+### Research History & Persistence
+- Uses an asynchronous background job system.
+- Jobs transition through states: `queued`, `running`, `completed`, `failed`.
+- Persists all jobs and structured JSON results to a local database.
+- Features a full **Research History** page with route-based reloading (`/research/:jobId`) of historical reports.
 
-The final report is generated as a structured Pydantic model (`InvestmentResearchReport`), which natively supports JSON serialization. It contains:
-- Identity: company, ticker, research date
-- Market snapshot
-- Financial summary and metrics
-- Historical analysis (includes `historical_financials` containing the financial series, and `trend_summary`)
-- Specialist reports (plain text)
-- Investment strategy
-- Data sources and Evidence registry
-
----
-
-## API & Backend
-
-The project includes a FastAPI backend (`api/main.py`).
-- **Endpoints:** `/health` for health checks and `/api/v1/research` for executing the research pipeline.
-- **Request Validation:** Uses Pydantic to validate parameters like `company` and `ticker`.
-- **Response:** Returns the structured `InvestmentResearchReport` as a JSON response.
-
----
-
-## Engineering Highlights
-
-- **Multi-agent architecture:** 5 specialized agents working together seamlessly using CrewAI.
-- **Deterministic financial computation:** Hard math is done in Python, preventing LLM hallucinations.
-- **SEC EDGAR integration:** Real-world parsing of complex XBRL company facts.
-- **Structured Pydantic outputs:** Ensures reliable JSON schema for API consumption.
-- **Historical financial extraction:** Robust parsing of past 5 years of fiscal data with fiscal-year deduplication.
-- **CAGR edge-case handling:** Calculates exact years and safely handles negative inputs.
-- **FastAPI backend:** Serves the AI workflow via a modern REST API.
-- **Separation of Concerns:** Retrieval, computation, and reasoning are entirely distinct phases.
+### Dashboard
+- A premium, high-density React 19 financial terminal interface.
+- Built with **Vite**, **TypeScript**, and **Recharts**.
+- Uses native CSS variables for a strict, consistent dark-mode design system.
 
 ---
 
-## Project Structure
+## 3. Architecture
 
-```text
-CrewAI/
-|-- agents/                     # CrewAI agent definitions and prompts
-|   |-- investment_research_report.py
-|   |-- investment_strategist.py
-|   |-- market_news_analyst.py
-|   |-- risk_analyst.py
-|   `-- valuation_analyst.py
-|-- api/                        # FastAPI backend
-|   |-- __init__.py
-|   `-- main.py
-|-- tools/                      # External data retrieval and metric calculation
-|   |-- financial_data_tool.py
-|   |-- financial_metrics.py
-|   |-- market_data_tool.py
-|   |-- news_data_tool.py
-|   `-- sec_financial_tool.py
-|-- utils/                      # Helper utilities
-|-- db/                         # Persistence layer
-|-- data/                       # Local data storage
-|-- .env.example                # Example environment variables
-|-- app.py                      # End-to-end CLI runner
-|-- requirements.txt            # Python dependencies
-`-- test_*.py                   # Unit and integration tests
+The system uses a React SPA frontend communicating with a FastAPI backend. The backend manages asynchronous research jobs, calling external APIs, executing the CrewAI orchestration, and persisting results.
+
+```mermaid
+flowchart TD
+
+    USER[User]
+
+    USER --> FRONTEND[React Frontend]
+
+    FRONTEND --> API[FastAPI API]
+
+    API --> JOB[Research Job Manager]
+
+    JOB --> MARKET[Market Data Tool]
+    JOB --> SEC[SEC Financial Data Tool]
+    JOB --> NEWS[News / Marketaux Tool]
+
+    MARKET --> VALIDATION[Validation / Normalization]
+    SEC --> VALIDATION
+    NEWS --> VALIDATION
+
+    VALIDATION --> METRICS[Financial Metrics Engine]
+
+    METRICS --> AGENTS[CrewAI Research Agents]
+
+    AGENTS --> STRATEGY[Investment Strategist]
+
+    STRATEGY --> REPORT[Structured Research Report JSON]
+
+    REPORT --> PERSISTENCE[(Local Database)]
+
+    PERSISTENCE --> HISTORY[Research History]
+
+    REPORT --> FRONTEND
 ```
 
 ---
 
-## Running The Project
+## 4. Prerequisites
 
-### Command Line
-Run the existing end-to-end pipeline:
+- **Python 3.13+**
+- **Node.js 20+**
+- **Google Gemini API Key**: For LLM reasoning.
+- **Marketaux API Key**: For financial news retrieval.
+- **SEC User Agent**: Required format: `AppName your-email@example.com` to comply with SEC Edgar rate limiting.
+
+---
+
+## 5. Installation & Setup
+
+Clone the repository:
 ```bash
-python app.py
+git clone https://github.com/yourusername/ai-investment-research.git
+cd ai-investment-research
 ```
 
-### API
-Start the FastAPI application:
+### Backend Setup
+
+1. Create a Python virtual environment:
 ```bash
-uvicorn api.main:app --reload
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+2. Install backend dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+### Frontend Setup
+
+1. Navigate to the frontend directory:
+```bash
+cd frontend
+```
+
+2. Install Node dependencies:
+```bash
+npm install
 ```
 
 ---
 
-## Testing
+## 6. Configuration
 
-The project uses a comprehensive test suite covering different layers of the application.
+Create a `.env` file in the root backend directory:
 
-**1. Deterministic / Local Tests (No external API calls):**
-- `test_serialization.py`: Validates Pydantic serialization of the final report.
-- `test_consistency.py`: Validates consistency logic.
-- `test_investment_research_report.py`: Tests structured report assembly with mock data, including recent regressions for `stockholders_equity` historical tracking.
-- `test_api.py`: FastAPI endpoint testing.
-- `test_evidence_registry.py`: Validates evidence storage and traceability.
-
-*(Note: `test_historical_metrics.py` currently encounters a `ModuleNotFoundError: No module named 'pytest'` when executed directly via python, so it should be run via the `pytest` command instead.)*
-
-**2. External Services / API Tests:**
-- `test_sec_tool.py`: Tests the live SEC EDGAR data extraction.
-- Agent tests (`test_valuation_agent.py`, `test_risk_analyst.py`, etc.).
-
-**3. End-to-End Application:**
-- `python app.py`: Executes the complete multi-agent pipeline and prints the report.
-
----
-
-## Roadmap
-
-### COMPLETED
-- CrewAI setup and Google Gemini integration
-- Financial, Market & News, Valuation, and Risk Analysts
-- Investment Strategist and structured report generation
-- SEC EDGAR data retrieval (normalized + raw evidence)
-- Historical financial extraction (latest 5 fiscal years, deduplicated)
-- Python-calculated financial metrics and robust CAGR edge-case handling
-- FastAPI foundation and structured JSON responses
-- Evidence registry and data validation
-
-### NEXT
-- API response and service-layer refinement
-- Frontend architecture and Investment research dashboard
-- Report visualization and Loading/progress UX
-
-### FUTURE / OPTIONAL
-- Evaluation framework
-- CI/CD pipeline
-- Performance benchmarking
-
----
-
-## Example Output
-
-*(This is a shortened conceptual example, not a complete live report.)*
-
-```json
-{
-  "company": "Apple Inc.",
-  "ticker": "AAPL",
-  "financial_summary": {
-    "revenue": 416161000000.0,
-    "gross_profit": 195201000000.0
-  },
-  "financial_metrics": {
-    "gross_margin": 46.91,
-    "operating_margin": 31.97
-  },
-  "historical_analysis": {
-      "historical_financials": {
-          "stockholders_equity": [
-              {"fy": 2023, "value": 62146000000.0, "unit": "USD"},
-              {"fy": 2024, "value": 56950000000.0, "unit": "USD"}
-          ]
-      },
-      "trend_summary": {
-          "revenue_trend": "Moderate Growth"
-      }
-  },
-  "investment_strategy": {
-      "recommendation": "HOLD",
-      "confidence": "HIGH"
-  }
-}
+```bash
+# .env
+GEMINI_API_KEY=your_gemini_api_key_here
+SEC_USER_AGENT="YourAppName your-email@example.com"
+MARKETAUX_API_KEY=your_marketaux_api_key_here
 ```
 
 ---
 
-## Important Disclaimer
+## 7. Running the Application
 
-This project is an AI research and educational system, not a financial advisor.
+You need to run both the FastAPI backend and the Vite frontend simultaneously.
 
-AI-generated analysis can contain errors, incomplete information, outdated information, or incorrect interpretations. Investment decisions should not be based solely on the output of this system. The system retrieves current market data and official SEC financial data, but users should independently verify important financial information before making decisions.
+**Start the Backend:**
+From the root directory, start the FastAPI server using Uvicorn:
+```bash
+uvicorn api.main:app --reload --port 8000
+```
+
+**Start the Frontend:**
+From the `frontend` directory, start the Vite development server:
+```bash
+cd frontend
+npm run dev
+```
+
+Navigate to `http://localhost:5173` in your browser.
+
+---
+
+## 8. API Documentation
+
+The FastAPI backend provides a RESTful interface for managing research jobs.
+
+### `POST /api/v1/research`
+Submits a new asynchronous research job.
+- **Body:** `{ "company": "Apple Inc.", "ticker": "AAPL" }`
+- **Response (202 Accepted):** `{ "job_id": "uuid", "status": "queued", "created_at": "..." }`
+
+### `GET /api/v1/research/{job_id}`
+Polls the status or retrieves the result of a specific research job.
+- **Response (200 OK):** 
+  - If running: `{ "job_id": "...", "status": "running" }`
+  - If completed: `{ "job_id": "...", "status": "completed", "result": { ...Structured JSON... } }`
+
+### `GET /api/v1/research/history`
+Retrieves a paginated list of all historical research jobs.
+- **Query Params:** `limit` (default 20, max 100)
+- **Response (200 OK):** `{ "research": [ { "job_id": "...", "status": "completed", "company": "Apple Inc.", ... } ] }`
+
+---
+
+## 9. Testing
+
+The repository includes a comprehensive `pytest` suite for the backend, verifying API contracts, state transitions, job persistence, and financial metric calculations.
+
+To run the backend tests:
+```bash
+pytest test_api.py -v
+```
+
+Tests ensure that:
+- API endpoint validation is strict (empty bodies, missing fields).
+- Job limits and ordering work properly.
+- The state machine (`queued` -> `running` -> `completed`/`failed`) functions correctly.
+- Application persistence simulates database restarts securely.

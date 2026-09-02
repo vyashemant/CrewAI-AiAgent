@@ -1,0 +1,312 @@
+/* Dashboard Layout */
+.dashboard-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    max-width: 1600px;
+    margin: 0 auto;
+}
+
+/* Analytical Panels */
+.panel {
+    background-color: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1.25rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.panel-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Terminal Header */
+.terminal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.header-main-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.company-title-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.company-name {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+    margin: 0;
+}
+
+.price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+}
+
+.current-price {
+    font-size: 2.5rem;
+    font-weight: 700;
+    font-family: var(--mono);
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.price-change {
+    font-size: 1.25rem;
+    font-weight: 600;
+    font-family: var(--mono);
+}
+.price-change.positive { color: var(--success); }
+.price-change.negative { color: var(--danger); }
+.price-change.neutral { color: var(--text-muted); }
+
+.header-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.25rem;
+    text-align: right;
+    font-size: 0.75rem;
+}
+
+.meta-row {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.meta-label { color: var(--text-secondary); }
+.meta-value { color: var(--text-primary); font-weight: 600; }
+
+/* Grid Systems */
+.grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+}
+
+@media (max-width: 1024px) {
+    .grid-2 { grid-template-columns: 1fr; }
+}
+
+.grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+}
+
+@media (max-width: 1024px) {
+    .grid-3 { grid-template-columns: 1fr; }
+}
+
+/* KPI Cells */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1px;
+    background-color: var(--border-light);
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.kpi-cell {
+    background-color: var(--bg-panel);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.kpi-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.kpi-value {
+    font-size: 1.5rem;
+    font-family: var(--mono);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.kpi-value.positive { color: var(--success); }
+.kpi-value.negative { color: var(--danger); }
+
+/* Tables */
+.terminal-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.terminal-table th {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    border-bottom: 1px solid var(--border-light);
+    text-transform: uppercase;
+    font-size: 0.75rem;
+}
+
+.terminal-table th.right-align { text-align: right; }
+.terminal-table th.center-align { text-align: center; }
+
+.terminal-table td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-primary);
+}
+
+.terminal-table tr:last-child td { border-bottom: none; }
+
+.history-row:hover td {
+    background-color: var(--bg-hover);
+}
+
+.history-row:hover .action-btn {
+    background-color: var(--accent-bg);
+    border-color: var(--accent-light);
+}
+
+.terminal-table td.numeric {
+    text-align: right;
+    font-family: var(--mono);
+}
+
+/* 52-week range indicator */
+.range-indicator {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 1.5rem 0;
+    font-family: var(--mono);
+    font-size: 0.875rem;
+}
+
+.range-track {
+    flex-grow: 1;
+    height: 4px;
+    background-color: var(--border-light);
+    border-radius: 2px;
+    position: relative;
+}
+
+.range-marker {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background-color: var(--text-primary);
+    border-radius: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 4px var(--bg-panel);
+}
+
+.range-current-value {
+    position: absolute;
+    top: 15px;
+    transform: translateX(-50%);
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 0.75rem;
+}
+
+/* Thesis section */
+.thesis-text {
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    color: var(--text-primary);
+    border-left: 2px solid var(--accent-light);
+    padding-left: 1rem;
+    margin-bottom: 1.5rem;
+    text-align: left;
+}
+
+/* Evidence Table */
+.evidence-table-container {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.evidence-table th {
+    position: sticky;
+    top: 0;
+    background-color: var(--bg-panel);
+    z-index: 10;
+}
+
+.evidence-table tr:hover td {
+    background-color: var(--bg-hover);
+}
+
+/* Scenario Case */
+.scenario-case {
+    background: var(--bg-secondary);
+    padding: 1rem;
+    border-radius: 4px;
+    border-top: 2px solid transparent;
+}
+.scenario-case.bull { border-top-color: var(--success); }
+.scenario-case.base { border-top-color: var(--accent); }
+.scenario-case.bear { border-top-color: var(--danger); }
+
+.scenario-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    text-transform: uppercase;
+}
+
+/* Lists */
+.compact-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.compact-list li {
+    display: flex;
+    gap: 0.75rem;
+    font-size: 0.875rem;
+}
+
+.list-number {
+    color: var(--text-secondary);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    padding-top: 0.125rem;
+}
