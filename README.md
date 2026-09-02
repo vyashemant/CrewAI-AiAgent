@@ -138,7 +138,7 @@ flowchart TD
 
 Clone the repository:
 ```bash
-git clone https://github.com/yourusername/ai-investment-research.git
+git clone https://github.com/vyashemant/CrewAI-AiAgent
 cd ai-investment-research
 ```
 
