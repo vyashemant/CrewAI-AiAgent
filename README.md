@@ -73,8 +73,13 @@ A comprehensive, deeply structured JSON research report presented in a premium d
 
 ### Research History & Persistence
 - Uses an asynchronous background job system.
-- Jobs transition through states: `queued`, `running`, `completed`, `failed`.
-- Persists all jobs and structured JSON results to a local database.
+- **Asynchronous Execution:** Background tasks enable long-running generation without blocking HTTP endpoints.
+- **SQLite Persistence:** All research jobs are stored and fully retrievable.
+
+### 5. Evaluation & Reliability Layer
+- **Deterministic Pipeline Tests:** Extensive mocked regression suites across multiple failure scenarios.
+- **Evaluation Mechanism (`utils/evaluation.py`):** Scores final reports deterministically based on data completeness, evidence coverage, and schema validity.
+- **Graceful Degradation:** The pipeline catches HTTP timeouts and missing financials securely without hallucinating inputs.
 - Features a full **Research History** page with route-based reloading (`/research/:jobId`) of historical reports.
 
 ### Dashboard
@@ -139,7 +144,7 @@ flowchart TD
 Clone the repository:
 ```bash
 git clone https://github.com/vyashemant/CrewAI-AiAgent
-cd ai-investment-research
+cd CrewAI-AiAgent
 ```
 
 ### Backend Setup
