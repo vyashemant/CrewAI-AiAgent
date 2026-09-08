@@ -44,6 +44,15 @@ def background_research_task(job_id: str, company: str, ticker: str):
         if report is None:
             raise RuntimeError("Research pipeline failed to produce a valid report.")
             
+        try:
+            from utils.evaluation import evaluate_research_quality
+            # Assuming consistency checks are run inside pipeline, we could mock it
+            # But let's evaluate based on the report directly here, or pass default
+            eval_score = evaluate_research_quality(report.model_dump() if hasattr(report, "model_dump") else report.dict(), "{}", {})
+            logger.info(f"Research Evaluation Score: {eval_score}")
+        except Exception as e:
+            logger.warning(f"Could not calculate evaluation score: {e}")
+            
         # Serialize the Pydantic model
         if hasattr(report, "model_dump_json"):
             result_json = report.model_dump_json()
@@ -64,7 +73,7 @@ def background_research_task(job_id: str, company: str, ticker: str):
         db.update_job(
             job_id=job_id,
             status="failed",
-            error="Research job failed.",
+            error=f"Research job failed due to internal error. Diagnostics available in logs.",
             completed_at=datetime.now(timezone.utc).isoformat()
         )
 
