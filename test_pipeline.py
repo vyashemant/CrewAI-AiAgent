@@ -44,18 +44,18 @@ def mock_sec_data():
         }
     }
 
-@patch("services.research_pipeline.market_data_tool.run")
-@patch("services.research_pipeline.sec_financial_tool.get_financial_data")
-@patch("services.research_pipeline.financial_data_tool._run")
-@patch("services.research_pipeline.news_data_tool.run")
+@patch("services.research_pipeline.market_data_tool")
+@patch("services.research_pipeline.sec_financial_tool")
+@patch("services.research_pipeline.financial_data_tool")
+@patch("services.research_pipeline.news_data_tool")
 @patch("services.research_pipeline.run_specialists_in_parallel")
-@patch("services.research_pipeline.strategy_team.kickoff")
+@patch("services.research_pipeline.strategy_team")
 def test_pipeline_healthy_company(mock_strategy, mock_specialists, mock_news, mock_fin, mock_sec, mock_mkt, mock_market_data, mock_sec_data):
     # Setup mocks
-    mock_mkt.return_value = str(mock_market_data)
-    mock_sec.return_value = mock_sec_data
-    mock_fin.return_value = mock_market_data
-    mock_news.return_value = "Mock News"
+    mock_mkt.run.return_value = str(mock_market_data)
+    mock_sec.get_financial_data.return_value = mock_sec_data
+    mock_fin._run.return_value = mock_market_data
+    mock_news.run.return_value = "Mock News"
     
     # Mock specialist outputs
     mock_specialists.return_value = {
@@ -66,14 +66,30 @@ def test_pipeline_healthy_company(mock_strategy, mock_specialists, mock_news, mo
     }
     
     # Mock strategist output
+    from agents.investment_strategist import InvestmentStrategy
     strategy_mock = MagicMock()
-    strategy_mock.pydantic = MagicMock()
-    strategy_mock.pydantic.recommendation = "BUY"
-    strategy_mock.pydantic.confidence = "HIGH"
-    strategy_mock.pydantic.investment_thesis = "Good"
-    mock_strategy.return_value = strategy_mock
+    strategy_mock.pydantic = InvestmentStrategy(
+        recommendation="BUY",
+        confidence="HIGH",
+        investment_thesis="Good",
+        company_quality="Mock quality",
+        valuation_view="Mock valuation",
+        fundamental_assessment="Mock fundamental",
+        market_and_news_assessment="Mock market",
+        valuation_assessment="Mock valuation assessment",
+        risk_assessment="Mock risk",
+        bull_case="Mock bull",
+        base_case="Mock base",
+        bear_case="Mock bear",
+        key_catalysts=["Cat1"],
+        key_risks=["Risk1"],
+        thesis_change_triggers=["Trigger1"],
+        evidence_summary="Mock evidence",
+        information_limitations="Mock limits"
+    )
+    mock_strategy.kickoff.return_value = strategy_mock
     
-    report, strategy, timing = run_investment_research("Test Company", "TST")
+    report, strategy, _, _, timing = run_investment_research("Test Company", "TST")
     
     assert report is not None
     assert report.company == "Test Company"
@@ -83,18 +99,18 @@ def test_pipeline_healthy_company(mock_strategy, mock_specialists, mock_news, mo
     assert report.financial_metrics.net_cash == 30000000.0
     assert report.investment_strategy.recommendation == "BUY"
 
-@patch("services.research_pipeline.market_data_tool.run")
-@patch("services.research_pipeline.sec_financial_tool.get_financial_data")
-@patch("services.research_pipeline.financial_data_tool._run")
-@patch("services.research_pipeline.news_data_tool.run")
+@patch("services.research_pipeline.market_data_tool")
+@patch("services.research_pipeline.sec_financial_tool")
+@patch("services.research_pipeline.financial_data_tool")
+@patch("services.research_pipeline.news_data_tool")
 @patch("services.research_pipeline.run_specialists_in_parallel")
-@patch("services.research_pipeline.strategy_team.kickoff")
+@patch("services.research_pipeline.strategy_team")
 def test_pipeline_missing_sec_data(mock_strategy, mock_specialists, mock_news, mock_fin, mock_sec, mock_mkt, mock_market_data):
     # Setup mocks
-    mock_mkt.return_value = str(mock_market_data)
-    mock_sec.return_value = {"error": "Not found"}
-    mock_fin.return_value = mock_market_data
-    mock_news.return_value = "Mock News"
+    mock_mkt.run.return_value = str(mock_market_data)
+    mock_sec.get_financial_data.return_value = {"error": "Not found"}
+    mock_fin._run.return_value = mock_market_data
+    mock_news.run.return_value = "Mock News"
     
     mock_specialists.return_value = {
         "Financial Analyst": {"report": "Fin output", "elapsed": 1.0},
@@ -103,14 +119,30 @@ def test_pipeline_missing_sec_data(mock_strategy, mock_specialists, mock_news, m
         "Risk Analyst": {"report": "Risk output", "elapsed": 1.0}
     }
     
+    from agents.investment_strategist import InvestmentStrategy
     strategy_mock = MagicMock()
-    strategy_mock.pydantic = MagicMock()
-    strategy_mock.pydantic.recommendation = "HOLD"
-    strategy_mock.pydantic.confidence = "LOW"
-    strategy_mock.pydantic.investment_thesis = "No Data"
-    mock_strategy.return_value = strategy_mock
+    strategy_mock.pydantic = InvestmentStrategy(
+        recommendation="HOLD",
+        confidence="LOW",
+        investment_thesis="No Data",
+        company_quality="Mock quality",
+        valuation_view="Mock valuation",
+        fundamental_assessment="Mock fundamental",
+        market_and_news_assessment="Mock market",
+        valuation_assessment="Mock valuation assessment",
+        risk_assessment="Mock risk",
+        bull_case="Mock bull",
+        base_case="Mock base",
+        bear_case="Mock bear",
+        key_catalysts=["Cat1"],
+        key_risks=["Risk1"],
+        thesis_change_triggers=["Trigger1"],
+        evidence_summary="Mock evidence",
+        information_limitations="Mock limits"
+    )
+    mock_strategy.kickoff.return_value = strategy_mock
     
-    report, strategy, timing = run_investment_research("Test Company", "TST")
+    report, strategy, _, _, timing = run_investment_research("Test Company", "TST")
     
     assert report is not None
     assert report.financial_summary.revenue is None

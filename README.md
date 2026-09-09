@@ -1,6 +1,6 @@
 # AI Investment Research
 
-An advanced, production-ready AI-powered equity research platform that orchestrates specialized AI agents to analyze public companies. The platform combines real-time data retrieval, deterministic financial calculations, rigorous evidence tracking, and a premium React-based financial terminal interface.
+An advanced, production-oriented AI-powered equity research platform that orchestrates specialized AI agents to analyze public companies. The platform combines real-time data retrieval, deterministic financial calculations, rigorous evidence tracking, and a premium React-based financial terminal interface.
 
 The core architectural principle of this system is the strict separation of quantitative calculations from qualitative reasoning:
 
@@ -18,7 +18,7 @@ EVIDENCE
 PRESENTATION
 ```
 
-By enforcing this flow, the platform guarantees that financial data (e.g., Gross Margins, ROE) is mathematically calculated from factual SEC filings and Yahoo Finance data, completely eliminating LLM financial hallucination. The LLM's role is strictly confined to reasoning, interpreting the deterministic data, and synthesizing investment theses.
+By enforcing this flow, the platform guarantees that financial data (e.g., Gross Margins, ROE) is mathematically calculated from factual SEC filings and Yahoo Finance data, reducing the risk of numerical hallucinations. The LLM's role is strictly confined to reasoning, interpreting the deterministic data, and synthesizing investment theses.
 
 ---
 
@@ -65,7 +65,7 @@ A comprehensive, deeply structured JSON research report presented in a premium d
 ### Deterministic Financial Calculations
 - The **Financial Metrics Engine** explicitly calculates all critical ratios prior to LLM reasoning.
 - Computes Margins (Gross, Operating, Net, FCF), Returns (ROA, ROE), Efficiency (Asset Turnover, Equity Multiplier), and Growth (CAGR).
-- Ensures no LLM hallucination of core financial mathematics.
+- Core financial calculations are performed deterministically from retrieved data, reducing the risk of numerical hallucinations.
 
 ### Evidence & Provenance
 - Implements an **Evidence Registry** that tracks the exact source, unit, and period for every critical data point.
@@ -74,7 +74,7 @@ A comprehensive, deeply structured JSON research report presented in a premium d
 ### Research History & Persistence
 - Uses an asynchronous background job system.
 - **Asynchronous Execution:** Background tasks enable long-running generation without blocking HTTP endpoints.
-- **SQLite Persistence:** All research jobs are stored and fully retrievable.
+- **Cloud Persistence:** Supports Supabase PostgreSQL persistence for research jobs, while automated tests use an isolated mock database. Default local execution uses SQLite.
 
 ### 5. Evaluation & Reliability Layer
 - **Deterministic Pipeline Tests:** Extensive mocked regression suites across multiple failure scenarios.
@@ -120,9 +120,13 @@ flowchart TD
 
     STRATEGY --> REPORT[Structured Research Report JSON]
 
-    REPORT --> PERSISTENCE[(Local Database)]
+    REPORT --> DB[Database Abstraction]
+    
+    DB --> SQLITE[(SQLite)]
+    DB --> SUPABASE[(Supabase)]
+    DB --> MOCK[(Mock DB)]
 
-    PERSISTENCE --> HISTORY[Research History]
+    DB --> HISTORY[Research History]
 
     REPORT --> FRONTEND
 ```
@@ -183,7 +187,30 @@ Create a `.env` file in the root backend directory:
 GEMINI_API_KEY=your_gemini_api_key_here
 SEC_USER_AGENT="YourAppName your-email@example.com"
 MARKETAUX_API_KEY=your_marketaux_api_key_here
+
+# Database Backend Configuration
+# Valid options: sqlite (default), supabase, mock
+DATABASE_BACKEND=sqlite
+
+# Required ONLY if DATABASE_BACKEND=supabase
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_SECRET_KEY=your_supabase_secret_key
 ```
+
+### Database Configuration
+
+- **SQLite (`sqlite`)**: The default backend, providing a persistent local database for development.
+- **Supabase (`supabase`)**: The production/cloud backend. Requires `SUPABASE_URL` and `SUPABASE_SECRET_KEY`. Schema is managed via Supabase migrations.
+- **Mock (`mock`)**: An isolated, in-memory backend exclusively used for testing. It is never automatically used as a fallback.
+
+#### Supabase Production Setup
+
+To use the Supabase backend in production:
+1. Create a project on [Supabase](https://supabase.com).
+2. Apply the database schema by running the SQL migration in `supabase/migrations/20260908000000_create_research_jobs.sql` via the Supabase CLI or the SQL Editor in your dashboard.
+3. Retrieve your Project URL and Secret Key from your project's API settings.
+4. Add these credentials to your local `.env` file as `SUPABASE_URL` and `SUPABASE_SECRET_KEY`. **Do not hardcode or commit these secrets to source control.**
+
 
 ---
 

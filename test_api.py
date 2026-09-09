@@ -2,15 +2,14 @@ import pytest
 import os
 import tempfile
 import sqlite3
+from unittest.mock import patch
+from datetime import datetime, timezone
 
-# Patch the DB_PATH before importing api.main
+# Patch the DB for testing before importing api.main
 import db.database as db
-temp_dir = tempfile.mkdtemp()
-temp_db_path = os.path.join(temp_dir, "test_research.db")
-db.DB_PATH = temp_db_path
-db.DB_DIR = temp_dir
+db.set_testing_mode(True)
 
-# Now it's safe to import app because db.init_db() will use temp_db_path
+# Now it's safe to import app
 from fastapi.testclient import TestClient
 from api.main import app
 
@@ -19,13 +18,10 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def setup_teardown():
     # Setup test DB (though it's created on import, we ensure it's there)
-    db.init_db(temp_db_path)
+    db.init_db()
     yield
-    # Teardown: clear the table after each test
-    with sqlite3.connect(temp_db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM research_jobs")
-        conn.commit()
+    # Teardown: clear the mock database
+    db.clear_mock_db()
 
 def test_health_endpoint():
     response = client.get("/health")
@@ -108,8 +104,8 @@ def test_research_endpoint_success(monkeypatch):
                 ]
             )
         )
-        # Returning exactly what app.py returns
-        return (report, None, {})
+        # Returning exactly what run_investment_research now returns (5 items)
+        return (report, None, "{}", {}, {})
 
     monkeypatch.setattr("services.research_service.run_investment_research", mock_run_investment_research)
 
@@ -217,20 +213,30 @@ def test_history_limits():
     assert resp.status_code == 422
 
 def test_history_ordering():
-    # Insert 3 jobs with out-of-order timestamps
-    db.create_job("job-1", "A", "A", "completed", "2026-08-30T10:00:00")
-    db.create_job("job-2", "B", "B", "completed", "2026-08-31T10:00:00")
-    db.create_job("job-3", "C", "C", "completed", "2026-08-29T10:00:00")
+    now_str = datetime.now(timezone.utc).isoformat()
+    db.create_job("job-1", "A", "T", "queued", "2026-08-01T10:00:00")
+    db.create_job("job-2", "B", "T", "queued", "2026-08-03T10:00:00")
+    db.create_job("job-3", "C", "T", "queued", "2026-08-02T10:00:00")
     
-    resp = client.get("/api/v1/research/history")
-    assert resp.status_code == 200
-    history = resp.json()["research"]
-    assert len(history) == 3
+    response = client.get("/api/v1/research/history?limit=3")
+    assert response.status_code == 200
+    history = response.json()["research"]
     
-    # Should be newest first
     assert history[0]["job_id"] == "job-2"
-    assert history[1]["job_id"] == "job-1"
-    assert history[2]["job_id"] == "job-3"
+    assert history[1]["job_id"] == "job-3"
+    assert history[2]["job_id"] == "job-1"
+
+def test_api_database_failure_history():
+    with patch("db.database.list_jobs", side_effect=Exception("DB connection lost")):
+        response = client.get("/api/v1/research/history")
+        assert response.status_code == 500
+        assert "temporarily unavailable" in response.json()["detail"]
+
+def test_api_database_failure_get_job():
+    with patch("db.database.get_job", side_effect=Exception("DB connection lost")):
+        response = client.get("/api/v1/research/job-123")
+        assert response.status_code == 500
+        assert "temporarily unavailable" in response.json()["detail"]
 
 def test_persistence_simulate_restart(monkeypatch):
     import json
@@ -308,5 +314,8 @@ def test_persistence_malformed_json():
     
     # Actually let's test the endpoint
     response = client.get(f"/api/v1/research/{job_id}")
-    assert response.status_code == 500
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "failed"
+    assert data["error"] == "Stored research result is corrupted."
 
