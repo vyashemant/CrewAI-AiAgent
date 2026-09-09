@@ -1123,6 +1123,6 @@ def run_investment_research(company: str, ticker: str):
             final_report = None
 
     timings["total"] = time.perf_counter() - total_start
-    return final_report, strategy_result, timings
+    return final_report, strategy_result, canonical_evidence, consistency_report, timings
 
 

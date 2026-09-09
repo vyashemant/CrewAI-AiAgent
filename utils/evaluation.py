@@ -38,14 +38,45 @@ def evaluate_research_quality(report: dict, canonical_evidence: str, consistency
         scores["consistency_score"] = max(0.0, round(1.0 - (issues_count * 0.1), 2))
         
     # Calculate Evidence Coverage
+    auditable_claims = 0
+    
+    financial_summary = report.get("financial_summary", {})
+    if isinstance(financial_summary, dict):
+        for k, v in financial_summary.items():
+            if k not in ["source", "fiscal_year", "fiscal_period", "period_start", "period_end", "filed"] and v is not None and v != "Unavailable":
+                auditable_claims += 1
+                
+    financial_metrics = report.get("financial_metrics", {})
+    if isinstance(financial_metrics, dict):
+        for k, v in financial_metrics.items():
+            if k not in ["source"] and v is not None and v != "Unavailable":
+                auditable_claims += 1
+                
+    market_snapshot = report.get("market_snapshot", {})
+    if isinstance(market_snapshot, dict):
+        for k, v in market_snapshot.items():
+            if k not in ["source"] and v is not None and v != "Unavailable":
+                auditable_claims += 1
+                
+    valuation_snapshot = report.get("valuation_snapshot", {})
+    if isinstance(valuation_snapshot, dict):
+        for k, v in valuation_snapshot.items():
+            if k not in ["source"] and v is not None and v != "Unavailable":
+                auditable_claims += 1
+                
+    supported_claims = 0
     evidence_registry = report.get("evidence_registry", {})
-    if evidence_registry:
+    if isinstance(evidence_registry, dict):
         evidence_items = evidence_registry.get("evidence", [])
-        if evidence_items:
-            # We just check if there is some evidence for now. 
-            # In a more complex system, this would map claims to evidence.
-            scores["evidence_coverage"] = min(1.0, round(len(evidence_items) / 10.0, 2))
-            
+        if isinstance(evidence_items, list):
+            for item in evidence_items:
+                if isinstance(item, dict) and item.get("evidence_type") in ["financial_fact", "market_data", "valuation_metric", "calculated_metric"]:
+                    supported_claims += 1
+                    
+    if auditable_claims > 0:
+        scores["evidence_coverage"] = min(1.0, round(supported_claims / auditable_claims, 2))
+    else:
+        scores["evidence_coverage"] = 1.0 if supported_claims > 0 else 0.0
     # Calculate Overall Score (simple weighted average)
     scores["overall_score"] = round(
         (scores["data_completeness"] * 0.4) + 
