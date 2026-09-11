@@ -1,0 +1,2 @@
+ALTER TABLE research_jobs
+ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;

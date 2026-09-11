@@ -155,7 +155,9 @@ def test_failed_result_mock(mock_db):
     now_str = datetime.now(timezone.utc).isoformat()
     db.create_job("job-1", "Company", "TICK", "queued", now_str)
     
+    db.update_job("job-1", status="running")
     db.update_job("job-1", status="failed", error="Something went wrong")
+    
     job = db.get_job("job-1")
     assert job["status"] == "failed"
     assert job["error"] == "Something went wrong"
@@ -268,3 +270,23 @@ def test_supabase_jsonb_roundtrip(mock_init):
     assert job["evaluation_json"] == '{"score": 95}'
     assert job["timings_json"] == '{"total": 500}'
 
+
+def test_supabase_migration_contains_started_at():
+    # Verify that there's a migration file adding started_at
+    migrations_dir = os.path.join(os.path.dirname(__file__), "supabase", "migrations")
+    if not os.path.exists(migrations_dir):
+        # Fallback if running from root
+        migrations_dir = "supabase/migrations"
+        
+    assert os.path.exists(migrations_dir), f"Migrations directory not found at {migrations_dir}"
+    
+    found_started_at = False
+    for filename in os.listdir(migrations_dir):
+        if filename.endswith(".sql"):
+            with open(os.path.join(migrations_dir, filename), "r") as f:
+                content = f.read().lower()
+                if "started_at" in content and "timestamptz" in content:
+                    found_started_at = True
+                    break
+    
+    assert found_started_at, "Supabase migrations must add 'started_at' TIMESTAMPTZ column."

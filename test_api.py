@@ -13,7 +13,14 @@ db.set_testing_mode(True)
 from fastapi.testclient import TestClient
 from api.main import app
 
+from api.auth import get_current_user
+
+# Set test mock mode
+os.environ["DATABASE_BACKEND"] = "mock"
+
 client = TestClient(app)
+# Add valid auth token to the default client headers for existing tests
+client.headers = {"Authorization": "Bearer test-token-valid"}
 
 @pytest.fixture(autouse=True)
 def setup_teardown():
@@ -187,7 +194,7 @@ def test_history_limits():
     for i in range(25):
         job_id = f"job-{i}"
         created_at = (base_time + timedelta(seconds=i)).isoformat()
-        db.create_job(job_id, f"Company {i}", "TCK", "completed", created_at)
+        db.create_job(job_id, f"Company {i}", "TCK", "completed", created_at, user_id="test-user-id")
         
     # Default limit is 20
     resp = client.get("/api/v1/research/history")
@@ -214,9 +221,9 @@ def test_history_limits():
 
 def test_history_ordering():
     now_str = datetime.now(timezone.utc).isoformat()
-    db.create_job("job-1", "A", "T", "queued", "2026-08-01T10:00:00")
-    db.create_job("job-2", "B", "T", "queued", "2026-08-03T10:00:00")
-    db.create_job("job-3", "C", "T", "queued", "2026-08-02T10:00:00")
+    db.create_job("job-1", "A", "T", "queued", "2026-08-01T10:00:00", user_id="test-user-id")
+    db.create_job("job-2", "B", "T", "queued", "2026-08-03T10:00:00", user_id="test-user-id")
+    db.create_job("job-3", "C", "T", "queued", "2026-08-02T10:00:00", user_id="test-user-id")
     
     response = client.get("/api/v1/research/history?limit=3")
     assert response.status_code == 200
@@ -243,7 +250,7 @@ def test_persistence_simulate_restart(monkeypatch):
     
     # 1. Create a job directly in the DB mimicking a completed run
     job_id = "persistent-job-123"
-    db.create_job(job_id, "Test Restart", "TEST", "running", "2026-08-31T10:00:00")
+    db.create_job(job_id, "Test Restart", "TEST", "running", "2026-08-31T10:00:00", user_id="test-user-id")
     
     mock_report = {
         "company": "Test Restart",
@@ -285,6 +292,7 @@ def test_persistence_simulate_restart(monkeypatch):
     
     # 3 & 4. Initialize a completely new TestClient instance to simulate restart
     new_client = TestClient(app)
+    new_client.headers = {"Authorization": "Bearer test-token-valid"}
     
     # 5. Retrieve the job
     resp = new_client.get(f"/api/v1/research/{job_id}")
@@ -300,17 +308,11 @@ def test_persistence_simulate_restart(monkeypatch):
 def test_persistence_malformed_json():
     # Insert malformed json directly into DB
     job_id = "malformed-job-123"
-    db.create_job(job_id, "Malformed", "MAL", "completed", "2026-08-31T10:00:00")
+    db.create_job(job_id, "Malformed", "MAL", "queued", "2026-08-31T10:00:00", user_id="test-user-id")
+    db.update_job(job_id, "running")
     db.update_job(job_id, "completed", "{ invalid_json: 123 ", None, "2026-08-31T10:01:00")
     
     # Retrieve should fail safely or return None for result
-    try:
-        from services.research_service import get_research_job
-        job = get_research_job(job_id)
-        assert False, "Expected JSONDecodeError or similar to be raised if not caught, but actually we should catch it in real app. Wait, if it raises, it's a 500 error."
-    except Exception as e:
-        # In this simplistic architecture, it raises JSONDecodeError, which the FastAPI app turns into 500
-        pass
     
     # Actually let's test the endpoint
     response = client.get(f"/api/v1/research/{job_id}")
@@ -319,3 +321,210 @@ def test_persistence_malformed_json():
     assert data["status"] == "failed"
     assert data["error"] == "Stored research result is corrupted."
 
+def test_lifecycle_failure_running(monkeypatch):
+    original_update = db.update_job
+    def mock_update_job(job_id, status, **kwargs):
+        if status == "running":
+            raise db.PersistenceError("Mock DB down")
+        return original_update(job_id, status, **kwargs)
+        
+    monkeypatch.setattr("db.database.update_job", mock_update_job)
+    
+    def mock_run(*args, **kwargs):
+        raise RuntimeError("Research should not run")
+    monkeypatch.setattr("services.research_service.run_investment_research", mock_run)
+
+    response = client.post("/api/v1/research", json={"company": "Apple Inc.", "ticker": "AAPL"})
+    job_id = response.json()["job_id"]
+    
+    status_response = client.get(f"/api/v1/research/{job_id}")
+    assert status_response.json()["status"] == "queued"
+
+def test_lifecycle_failure_completed(monkeypatch):
+    original_update = db.update_job
+    def mock_update_job(job_id, status, **kwargs):
+        if status == "completed":
+            raise db.PersistenceError("Mock DB down")
+        return original_update(job_id, status, **kwargs)
+        
+    monkeypatch.setattr("db.database.update_job", mock_update_job)
+    
+    def mock_run(*args, **kwargs):
+        from agents.investment_research_report import InvestmentResearchReport, MarketSnapshot, FinancialSummary, FinancialMetrics, SpecialistReports, InvestmentStrategy, DataSources, EvidenceRegistry
+        report = InvestmentResearchReport(
+            company="Apple Inc.", ticker="AAPL", research_date="2026-08-27",
+            market_snapshot=MarketSnapshot(), financial_summary=FinancialSummary(),
+            financial_metrics=FinancialMetrics(), news="Mock",
+            specialist_reports=SpecialistReports(financial_analyst="", market_news_analyst="", valuation_analyst="", risk_analyst=""),
+            investment_strategy=InvestmentStrategy(recommendation="BUY", confidence="HIGH", investment_thesis="", company_quality="", valuation_view="", fundamental_assessment="", market_and_news_assessment="", valuation_assessment="", risk_assessment="", bull_case="", base_case="", bear_case="", key_catalysts=[], key_risks=[], thesis_change_triggers=[], evidence_summary="", information_limitations=""),
+            data_sources=DataSources(), evidence_registry=EvidenceRegistry(evidence=[])
+        )
+        return (report, None, "{}", {}, {})
+    monkeypatch.setattr("services.research_service.run_investment_research", mock_run)
+
+    response = client.post("/api/v1/research", json={"company": "Apple Inc.", "ticker": "AAPL"})
+    job_id = response.json()["job_id"]
+    
+    status_response = client.get(f"/api/v1/research/{job_id}")
+    assert status_response.json()["status"] == "running"
+
+def test_lifecycle_failure_failed(monkeypatch):
+    original_update = db.update_job
+    def mock_update_job(job_id, status, **kwargs):
+        if status == "failed":
+            raise db.PersistenceError("Mock DB down")
+        return original_update(job_id, status, **kwargs)
+        
+    monkeypatch.setattr("db.database.update_job", mock_update_job)
+    
+    def mock_run(*args, **kwargs):
+        raise RuntimeError("Research failed")
+    monkeypatch.setattr("services.research_service.run_investment_research", mock_run)
+
+    response = client.post("/api/v1/research", json={"company": "Apple Inc.", "ticker": "AAPL"})
+    job_id = response.json()["job_id"]
+    
+    status_response = client.get(f"/api/v1/research/{job_id}")
+    assert status_response.json()["status"] == "running"
+
+def test_invalid_transitions():
+    import pytest
+    from db.database import PersistenceError
+    db.create_job("tr-1", "C", "T", "queued", "2026-08-31T10:00:00", user_id="test-user-id")
+    
+    with pytest.raises(PersistenceError, match="Invalid state transition from queued to completed"):
+        db.update_job("tr-1", "completed")
+        
+    with pytest.raises(PersistenceError, match="Invalid state transition from queued to failed"):
+        db.update_job("tr-1", "failed")
+
+    # Move to completed
+    db.update_job("tr-1", "running")
+    db.update_job("tr-1", "completed")
+    
+    with pytest.raises(PersistenceError, match="Invalid state transition from completed to running"):
+        db.update_job("tr-1", "running")
+        
+    with pytest.raises(PersistenceError, match="Invalid state transition from completed to failed"):
+        db.update_job("tr-1", "failed")
+
+    db.create_job("tr-2", "C", "T", "queued", "2026-08-31T10:00:00", user_id="test-user-id")
+    db.update_job("tr-2", "running")
+    db.update_job("tr-2", "failed")
+    
+    with pytest.raises(PersistenceError, match="Invalid state transition from failed to running"):
+        db.update_job("tr-2", "running")
+
+    with pytest.raises(PersistenceError, match="Invalid state transition from failed to completed"):
+        db.update_job("tr-2", "completed")
+
+    # verify records are unchanged after rejected transitions
+    assert db.get_job("tr-1")["status"] == "completed"
+    assert db.get_job("tr-2")["status"] == "failed"
+
+def test_timestamp_lifecycle_success(monkeypatch):
+    def mock_run(*args, **kwargs):
+        from agents.investment_research_report import InvestmentResearchReport, MarketSnapshot, FinancialSummary, FinancialMetrics, SpecialistReports, InvestmentStrategy, DataSources, EvidenceRegistry
+        report = InvestmentResearchReport(
+            company="Apple Inc.", ticker="AAPL", research_date="2026-08-27",
+            market_snapshot=MarketSnapshot(), financial_summary=FinancialSummary(),
+            financial_metrics=FinancialMetrics(), news="Mock",
+            specialist_reports=SpecialistReports(financial_analyst="", market_news_analyst="", valuation_analyst="", risk_analyst=""),
+            investment_strategy=InvestmentStrategy(recommendation="BUY", confidence="HIGH", investment_thesis="", company_quality="", valuation_view="", fundamental_assessment="", market_and_news_assessment="", valuation_assessment="", risk_assessment="", bull_case="", base_case="", bear_case="", key_catalysts=[], key_risks=[], thesis_change_triggers=[], evidence_summary="", information_limitations=""),
+            data_sources=DataSources(), evidence_registry=EvidenceRegistry(evidence=[])
+        )
+        return (report, None, "{}", {}, {})
+    monkeypatch.setattr("services.research_service.run_investment_research", mock_run)
+
+    response = client.post("/api/v1/research", json={"company": "Apple Inc.", "ticker": "AAPL"})
+    data = response.json()
+    job_id = data["job_id"]
+    original_created_at = data["created_at"]
+    
+    job_record = db.get_job(job_id)
+    assert job_record["status"] == "completed"
+    assert job_record["created_at"] == original_created_at
+    
+    created_at = datetime.fromisoformat(job_record["created_at"])
+    completed_at = datetime.fromisoformat(job_record["completed_at"])
+    assert completed_at >= created_at
+
+def test_timestamp_lifecycle_failure(monkeypatch):
+    def mock_run(*args, **kwargs):
+        raise RuntimeError("Research failed")
+    monkeypatch.setattr("services.research_service.run_investment_research", mock_run)
+
+    response = client.post("/api/v1/research", json={"company": "Apple Inc.", "ticker": "AAPL"})
+    data = response.json()
+    job_id = data["job_id"]
+    original_created_at = data["created_at"]
+    
+    job_record = db.get_job(job_id)
+    assert job_record["status"] == "failed"
+    assert job_record["created_at"] == original_created_at
+    
+    created_at = datetime.fromisoformat(job_record["created_at"])
+    completed_at = datetime.fromisoformat(job_record["completed_at"])
+    assert completed_at >= created_at
+
+def test_auth_missing_header():
+    # Remove default auth header
+    client.headers.pop("Authorization", None)
+    response = client.get("/health")
+    # /health doesn't have auth on it, let's test /api/v1/research/history
+    response = client.get("/api/v1/research/history")
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Not authenticated"
+    
+    # Restore header
+    client.headers["Authorization"] = "Bearer test-token-valid"
+
+def test_auth_invalid_header():
+    client.headers["Authorization"] = "Bearer invalid-token"
+    response = client.get("/api/v1/research/history")
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid authentication credentials"
+    
+    # Restore header
+    client.headers["Authorization"] = "Bearer test-token-valid"
+
+def test_auth_isolation(monkeypatch):
+    # Mock research run so we don't need real results
+    def mock_run(*args, **kwargs):
+        raise RuntimeError("Should not be called")
+    monkeypatch.setattr("services.research_service.run_investment_research", mock_run)
+
+    # User A creates a job
+    client.headers["Authorization"] = "Bearer test-token-valid"
+    response_a = client.post("/api/v1/research", json={"company": "User A Corp", "ticker": "AAA"})
+    assert response_a.status_code == 202
+    job_id_a = response_a.json()["job_id"]
+    
+    # User B creates a job
+    client.headers["Authorization"] = "Bearer test-token-valid-user-b"
+    response_b = client.post("/api/v1/research", json={"company": "User B Corp", "ticker": "BBB"})
+    assert response_b.status_code == 202
+    job_id_b = response_b.json()["job_id"]
+    
+    # User A cannot retrieve User B's job
+    client.headers["Authorization"] = "Bearer test-token-valid"
+    status_a_for_b = client.get(f"/api/v1/research/{job_id_b}")
+    assert status_a_for_b.status_code == 404
+    
+    # User A's history only contains User A's jobs
+    hist_a = client.get("/api/v1/research/history")
+    assert hist_a.status_code == 200
+    hist_a_jobs = [j["job_id"] for j in hist_a.json()["research"]]
+    assert job_id_a in hist_a_jobs
+    assert job_id_b not in hist_a_jobs
+    
+    # User B's history only contains User B's jobs
+    client.headers["Authorization"] = "Bearer test-token-valid-user-b"
+    hist_b = client.get("/api/v1/research/history")
+    assert hist_b.status_code == 200
+    hist_b_jobs = [j["job_id"] for j in hist_b.json()["research"]]
+    assert job_id_b in hist_b_jobs
+    assert job_id_a not in hist_b_jobs
+    
+    # Restore header
+    client.headers["Authorization"] = "Bearer test-token-valid"
