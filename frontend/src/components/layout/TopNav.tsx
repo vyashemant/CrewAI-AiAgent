@@ -1,6 +1,8 @@
-import { Bell, HelpCircle, Search, Settings, User } from 'lucide-react';
+import { Bell, HelpCircle, Search, Settings, User, LogOut } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 
 export function TopNav() {
+    const { user, signOut } = useAuth();
     return (
         <header className="top-bar">
             <div className="search-container" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)', background: 'var(--bg-primary)', padding: '0.375rem 0.75rem', borderRadius: '4px', border: '1px solid var(--border)' }}>
@@ -24,7 +26,13 @@ export function TopNav() {
                 <button className="action-btn"><Bell size={18} /></button>
                 <button className="action-btn"><Settings size={18} /></button>
                 <button className="action-btn"><HelpCircle size={18} /></button>
-                <button className="action-btn" style={{ marginLeft: '0.5rem' }}><User size={18} /></button>
+                <button className="action-btn" title="Profile" style={{ marginLeft: '0.5rem' }}><User size={18} /></button>
+                {user && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '0.5rem' }}>
+                        <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{user.email}</span>
+                        <button className="action-btn" onClick={signOut} title="Sign Out"><LogOut size={18} /></button>
+                    </div>
+                )}
             </div>
         </header>
     );

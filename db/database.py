@@ -21,22 +21,22 @@ class DatabaseBackend(ABC):
         pass
 
     @abstractmethod
-    def create_job(self, job_id: str, company: str, ticker: str, status: str, created_at: str, db_path=None):
+    def create_job(self, job_id: str, company: str, ticker: str, status: str, created_at: str, db_path=None, user_id: str = None):
         pass
 
     @abstractmethod
     def update_job(self, job_id: str, status: str, result_json: str = None, error: str = None, 
-                   completed_at: str = None, db_path=None, 
+                   completed_at: str = None, started_at: str = None, db_path=None, 
                    canonical_evidence_json: str = None, consistency_json: str = None, 
                    evaluation_json: str = None, timings_json: str = None):
         pass
 
     @abstractmethod
-    def get_job(self, job_id: str, db_path=None) -> Optional[dict]:
+    def get_job(self, job_id: str, db_path=None, user_id: str = None) -> Optional[dict]:
         pass
 
     @abstractmethod
-    def list_jobs(self, limit: int = 20, db_path=None) -> list:
+    def list_jobs(self, limit: int = 20, status: str = None, db_path=None, user_id: str = None) -> list:
         pass
 
 
@@ -76,7 +76,9 @@ class SQLiteBackend(DatabaseBackend):
                     timings_json TEXT,
                     error TEXT,
                     created_at TEXT NOT NULL,
-                    completed_at TEXT
+                    started_at TEXT,
+                    completed_at TEXT,
+                    user_id TEXT
                 )
             """)
             
@@ -88,7 +90,9 @@ class SQLiteBackend(DatabaseBackend):
                 "canonical_evidence_json",
                 "consistency_json",
                 "evaluation_json",
-                "timings_json"
+                "timings_json",
+                "started_at",
+                "user_id"
             ]
             
             for col in required_columns:
@@ -97,20 +101,20 @@ class SQLiteBackend(DatabaseBackend):
             
             conn.commit()
 
-    def create_job(self, job_id: str, company: str, ticker: str, status: str, created_at: str, db_path=None):
+    def create_job(self, job_id: str, company: str, ticker: str, status: str, created_at: str, db_path=None, user_id: str = None):
         try:
             with self._get_db_connection(db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO research_jobs (job_id, company, ticker, status, created_at)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (job_id, company, ticker, status, created_at))
+                    INSERT INTO research_jobs (job_id, company, ticker, status, created_at, user_id)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (job_id, company, ticker, status, created_at, user_id))
                 conn.commit()
         except Exception as e:
             raise PersistenceError("SQLite create_job failed") from e
 
     def update_job(self, job_id: str, status: str, result_json: str = None, error: str = None, 
-                   completed_at: str = None, db_path=None, 
+                   completed_at: str = None, started_at: str = None, db_path=None, 
                    canonical_evidence_json: str = None, consistency_json: str = None, 
                    evaluation_json: str = None, timings_json: str = None):
         try:
@@ -125,18 +129,22 @@ class SQLiteBackend(DatabaseBackend):
                         evaluation_json = COALESCE(?, evaluation_json),
                         timings_json = COALESCE(?, timings_json),
                         error = COALESCE(?, error), 
+                        started_at = COALESCE(?, started_at),
                         completed_at = COALESCE(?, completed_at)
                     WHERE job_id = ?
-                """, (status, result_json, canonical_evidence_json, consistency_json, evaluation_json, timings_json, error, completed_at, job_id))
+                """, (status, result_json, canonical_evidence_json, consistency_json, evaluation_json, timings_json, error, started_at, completed_at, job_id))
                 conn.commit()
         except Exception as e:
             raise PersistenceError("SQLite update_job failed") from e
 
-    def get_job(self, job_id: str, db_path=None) -> Optional[dict]:
+    def get_job(self, job_id: str, db_path=None, user_id: str = None) -> Optional[dict]:
         try:
             with self._get_db_connection(db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM research_jobs WHERE job_id = ?", (job_id,))
+                if user_id:
+                    cursor.execute("SELECT * FROM research_jobs WHERE job_id = ? AND user_id = ?", (job_id, user_id))
+                else:
+                    cursor.execute("SELECT * FROM research_jobs WHERE job_id = ?", (job_id,))
                 row = cursor.fetchone()
                 if row:
                     return dict(row)
@@ -144,16 +152,27 @@ class SQLiteBackend(DatabaseBackend):
         except Exception as e:
             raise PersistenceError("SQLite get_job failed") from e
 
-    def list_jobs(self, limit: int = 20, db_path=None) -> list:
+    def list_jobs(self, limit: int = 20, status: str = None, db_path=None, user_id: str = None) -> list:
         try:
             with self._get_db_connection(db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT job_id, company, ticker, status, created_at, completed_at 
-                    FROM research_jobs 
-                    ORDER BY created_at DESC 
-                    LIMIT ?
-                """, (limit,))
+                query = "SELECT job_id, company, ticker, status, created_at, started_at, completed_at, user_id FROM research_jobs"
+                params = []
+                conditions = []
+                if status:
+                    conditions.append("status = ?")
+                    params.append(status)
+                if user_id:
+                    conditions.append("user_id = ?")
+                    params.append(user_id)
+                
+                if conditions:
+                    query += " WHERE " + " AND ".join(conditions)
+                    
+                query += " ORDER BY created_at DESC LIMIT ?"
+                params.append(limit)
+                
+                cursor.execute(query, tuple(params))
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             raise PersistenceError("SQLite list_jobs failed") from e
@@ -180,7 +199,7 @@ class SupabaseBackend(DatabaseBackend):
     def init_db(self, db_path=None):
         pass # Migrations are handled via supabase CLI
 
-    def create_job(self, job_id: str, company: str, ticker: str, status: str, created_at: str, db_path=None):
+    def create_job(self, job_id: str, company: str, ticker: str, status: str, created_at: str, db_path=None, user_id: str = None):
         data = {
             "job_id": job_id,
             "company": company,
@@ -188,6 +207,9 @@ class SupabaseBackend(DatabaseBackend):
             "status": status,
             "created_at": created_at
         }
+        if user_id:
+            data["user_id"] = user_id
+
         try:
             self._client.table("research_jobs").insert(data).execute()
         except Exception as e:
@@ -204,12 +226,13 @@ class SupabaseBackend(DatabaseBackend):
             raise PersistenceError(f"Malformed JSON in field {field_name}") from e
 
     def update_job(self, job_id: str, status: str, result_json: str = None, error: str = None, 
-                   completed_at: str = None, db_path=None, 
+                   completed_at: str = None, started_at: str = None, db_path=None, 
                    canonical_evidence_json: str = None, consistency_json: str = None, 
                    evaluation_json: str = None, timings_json: str = None):
         
         updates = {"status": status}
         if error is not None: updates["error"] = error
+        if started_at is not None: updates["started_at"] = started_at
         if completed_at is not None: updates["completed_at"] = completed_at
         
         # Parse JSON fields to objects before sending to JSONB
@@ -230,9 +253,12 @@ class SupabaseBackend(DatabaseBackend):
             logger.error(f"Supabase write error (update_job)")
             raise PersistenceError("Supabase update_job failed") from e
 
-    def get_job(self, job_id: str, db_path=None) -> Optional[dict]:
+    def get_job(self, job_id: str, db_path=None, user_id: str = None) -> Optional[dict]:
         try:
-            response = self._client.table("research_jobs").select("*").eq("job_id", job_id).execute()
+            query = self._client.table("research_jobs").select("*").eq("job_id", job_id)
+            if user_id:
+                query = query.eq("user_id", user_id)
+            response = query.execute()
             if response.data:
                 row = response.data[0]
                 # Convert dict/lists back to strings for API compatibility
@@ -245,9 +271,14 @@ class SupabaseBackend(DatabaseBackend):
             logger.error(f"Supabase read error (get_job)")
             raise PersistenceError("Supabase get_job failed") from e
 
-    def list_jobs(self, limit: int = 20, db_path=None) -> list:
+    def list_jobs(self, limit: int = 20, status: str = None, db_path=None, user_id: str = None) -> list:
         try:
-            response = self._client.table("research_jobs").select("job_id, company, ticker, status, created_at, completed_at").order("created_at", desc=True).limit(limit).execute()
+            query = self._client.table("research_jobs").select("job_id, company, ticker, status, created_at, started_at, completed_at, user_id")
+            if status:
+                query = query.eq("status", status)
+            if user_id:
+                query = query.eq("user_id", user_id)
+            response = query.order("created_at", desc=True).limit(limit).execute()
             return response.data
         except Exception as e:
             logger.error(f"Supabase read error (list_jobs)")
@@ -265,17 +296,18 @@ class MockBackend(DatabaseBackend):
     def init_db(self, db_path=None):
         pass
 
-    def create_job(self, job_id: str, company: str, ticker: str, status: str, created_at: str, db_path=None):
+    def create_job(self, job_id: str, company: str, ticker: str, status: str, created_at: str, db_path=None, user_id: str = None):
         self._mock_db[job_id] = {
             "job_id": job_id,
             "company": company,
             "ticker": ticker,
             "status": status,
-            "created_at": created_at
+            "created_at": created_at,
+            "user_id": user_id
         }
 
     def update_job(self, job_id: str, status: str, result_json: str = None, error: str = None, 
-                   completed_at: str = None, db_path=None, 
+                   completed_at: str = None, started_at: str = None, db_path=None, 
                    canonical_evidence_json: str = None, consistency_json: str = None, 
                    evaluation_json: str = None, timings_json: str = None):
         if job_id in self._mock_db:
@@ -286,21 +318,28 @@ class MockBackend(DatabaseBackend):
             if evaluation_json is not None: updates["evaluation_json"] = evaluation_json
             if timings_json is not None: updates["timings_json"] = timings_json
             if error is not None: updates["error"] = error
+            if started_at is not None: updates["started_at"] = started_at
             if completed_at is not None: updates["completed_at"] = completed_at
             self._mock_db[job_id].update(updates)
         else:
             raise PersistenceError(f"Job {job_id} not found in mock db")
 
-    def get_job(self, job_id: str, db_path=None) -> Optional[dict]:
+    def get_job(self, job_id: str, db_path=None, user_id: str = None) -> Optional[dict]:
         row = self._mock_db.get(job_id)
         if row:
+            if user_id and row.get("user_id") != user_id:
+                return None
             r = row.copy()
             # In memory, we keep them as they were stored (strings, if passed as strings)
             return r
         return None
 
-    def list_jobs(self, limit: int = 20, db_path=None) -> list:
+    def list_jobs(self, limit: int = 20, status: str = None, db_path=None, user_id: str = None) -> list:
         jobs = list(self._mock_db.values())
+        if status:
+            jobs = [j for j in jobs if j.get("status") == status]
+        if user_id:
+            jobs = [j for j in jobs if j.get("user_id") == user_id]
         jobs.sort(key=lambda x: x.get("created_at", ""), reverse=True)
         result = []
         for j in jobs[:limit]:
@@ -310,7 +349,9 @@ class MockBackend(DatabaseBackend):
                 "ticker": j.get("ticker"),
                 "status": j.get("status"),
                 "created_at": j.get("created_at"),
-                "completed_at": j.get("completed_at")
+                "started_at": j.get("started_at"),
+                "completed_at": j.get("completed_at"),
+                "user_id": j.get("user_id")
             })
         return result
 
@@ -337,21 +378,36 @@ def get_db() -> DatabaseBackend:
 def init_db(db_path=None):
     get_db().init_db(db_path)
 
-def create_job(job_id: str, company: str, ticker: str, status: str, created_at: str, db_path=None):
-    get_db().create_job(job_id, company, ticker, status, created_at, db_path)
+def create_job(job_id: str, company: str, ticker: str, status: str, created_at: str, db_path=None, user_id: str = None):
+    get_db().create_job(job_id, company, ticker, status, created_at, db_path, user_id)
+
+def validate_job_transition(current_status: str, new_status: str):
+    valid_transitions = {
+        "queued": ["running"],
+        "running": ["completed", "failed"],
+        "completed": [],
+        "failed": []
+    }
+    if new_status not in valid_transitions.get(current_status, []):
+        raise PersistenceError(f"Invalid state transition from {current_status} to {new_status}")
 
 def update_job(job_id: str, status: str, result_json: str = None, error: str = None, 
-               completed_at: str = None, db_path=None, 
+               completed_at: str = None, started_at: str = None, db_path=None, 
                canonical_evidence_json: str = None, consistency_json: str = None, 
                evaluation_json: str = None, timings_json: str = None):
-    get_db().update_job(job_id, status, result_json, error, completed_at, db_path, 
+    backend = get_db()
+    current_job = backend.get_job(job_id, db_path)
+    if current_job:
+        validate_job_transition(current_job["status"], status)
+    
+    backend.update_job(job_id, status, result_json, error, completed_at, started_at, db_path, 
                         canonical_evidence_json, consistency_json, evaluation_json, timings_json)
 
-def get_job(job_id: str, db_path=None) -> Optional[dict]:
-    return get_db().get_job(job_id, db_path)
+def get_job(job_id: str, db_path=None, user_id: str = None) -> Optional[dict]:
+    return get_db().get_job(job_id, db_path, user_id)
 
-def list_jobs(limit: int = 20, db_path=None) -> list:
-    return get_db().list_jobs(limit, db_path)
+def list_jobs(limit: int = 20, status: str = None, db_path=None, user_id: str = None) -> list:
+    return get_db().list_jobs(limit, status, db_path, user_id)
 
 def set_testing_mode(enabled: bool):
     """

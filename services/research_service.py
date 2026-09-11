@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone
 import json
 
+import os
 from typing import Tuple, Dict, Any, Optional
 import db.database as db
 from services.research_pipeline import run_investment_research
@@ -10,7 +11,9 @@ from agents.investment_research_report import InvestmentResearchReport
 
 logger = logging.getLogger(__name__)
 
-def submit_research_job(company: str, ticker: str, background_tasks) -> Tuple[str, str]:
+RESEARCH_JOB_TIMEOUT_SECONDS = int(os.environ.get("RESEARCH_JOB_TIMEOUT_SECONDS", "3600"))
+
+def submit_research_job(company: str, ticker: str, background_tasks, user_id: str = None) -> Tuple[str, str]:
     job_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
     
@@ -20,18 +23,23 @@ def submit_research_job(company: str, ticker: str, background_tasks) -> Tuple[st
             company=company,
             ticker=ticker,
             status="queued",
-            created_at=created_at
+            created_at=created_at,
+            user_id=user_id
         )
     except Exception as e:
         logger.error(f"Failed to persist new research job {job_id}: {e}")
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail="Failed to initialize research job in database.")
         
-    background_tasks.add_task(background_research_task, job_id, company, ticker)
+    background_tasks.add_task(background_research_task, job_id, company, ticker, user_id)
     return job_id, created_at
 
-def background_research_task(job_id: str, company: str, ticker: str):
-    db.update_job(job_id=job_id, status="running")
+def background_research_task(job_id: str, company: str, ticker: str, user_id: str = None):
+    try:
+        db.update_job(job_id=job_id, status="running", started_at=datetime.now(timezone.utc).isoformat())
+    except Exception as e:
+        logger.error(f"Failed to transition job {job_id} to running state: {e}")
+        return
             
     try:
         logger.info(f"Background research started for {company} ({ticker}), Job ID: {job_id}")
@@ -71,31 +79,38 @@ def background_research_task(job_id: str, company: str, ticker: str):
         else:
             result_json = report.json()
             
-        db.update_job(
-            job_id=job_id, 
-            status="completed", 
-            result_json=result_json,
-            canonical_evidence_json=canonical_evidence,
-            consistency_json=json.dumps(consistency_report) if consistency_report else None,
-            evaluation_json=json.dumps(eval_score) if eval_score else None,
-            timings_json=json.dumps(timings) if timings else None,
-            completed_at=datetime.now(timezone.utc).isoformat()
-        )
-                
-        logger.info(f"Background research complete for Job ID: {job_id}")
+        try:
+            db.update_job(
+                job_id=job_id, 
+                status="completed", 
+                result_json=result_json,
+                canonical_evidence_json=canonical_evidence,
+                consistency_json=json.dumps(consistency_report) if consistency_report else None,
+                evaluation_json=json.dumps(eval_score) if eval_score else None,
+                timings_json=json.dumps(timings) if timings else None,
+                completed_at=datetime.now(timezone.utc).isoformat()
+            )
+            logger.info(f"Background research complete for Job ID: {job_id}")
+        except Exception as e:
+            logger.error(f"Failed to persist completed state for job {job_id}: {e}")
+            return
         
     except Exception as e:
         logger.error(f"Research failure for Job ID {job_id}: {str(e)}", exc_info=True)
-        db.update_job(
-            job_id=job_id,
-            status="failed",
-            error=f"Research job failed due to internal error. Diagnostics available in logs.",
-            completed_at=datetime.now(timezone.utc).isoformat()
-        )
+        try:
+            db.update_job(
+                job_id=job_id,
+                status="failed",
+                error=f"Research job failed due to internal error. Diagnostics available in logs.",
+                completed_at=datetime.now(timezone.utc).isoformat()
+            )
+        except Exception as db_e:
+            logger.error(f"Failed to persist failed state for job {job_id} after research failure: {db_e}")
+            return
 
-def get_job_history(limit: int):
+def get_job_history(limit: int, user_id: str = None):
     try:
-        return db.list_jobs(limit=limit)
+        return db.list_jobs(limit=limit, user_id=user_id)
     except Exception as e:
         logger.error(f"Failed to fetch job history: {e}")
         from fastapi import HTTPException
@@ -109,9 +124,9 @@ def get_job_status(job_id: str):
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail="Research database temporarily unavailable.")
 
-def get_research_job(job_id: str) -> Optional[Dict[str, Any]]:
+def get_research_job(job_id: str, user_id: str = None) -> Optional[Dict[str, Any]]:
     try:
-        job_data = db.get_job(job_id)
+        job_data = db.get_job(job_id, user_id=user_id)
     except Exception as e:
         logger.error(f"Failed to fetch research job {job_id}: {e}")
         from fastapi import HTTPException
@@ -133,6 +148,7 @@ def get_research_job(job_id: str) -> Optional[Dict[str, Any]]:
                 "result": None,
                 "error": "Stored research result is corrupted.",
                 "created_at": job_data["created_at"],
+                "started_at": job_data.get("started_at"),
                 "completed_at": job_data.get("completed_at")
             }
         except Exception as e:
@@ -143,6 +159,7 @@ def get_research_job(job_id: str) -> Optional[Dict[str, Any]]:
                 "result": None,
                 "error": "Failed to parse stored research result.",
                 "created_at": job_data["created_at"],
+                "started_at": job_data.get("started_at"),
                 "completed_at": job_data.get("completed_at")
             }
         
@@ -152,5 +169,38 @@ def get_research_job(job_id: str) -> Optional[Dict[str, Any]]:
         "result": result,
         "error": job_data.get("error"),
         "created_at": job_data["created_at"],
+        "started_at": job_data.get("started_at"),
         "completed_at": job_data.get("completed_at")
     }
+
+def find_stale_running_jobs():
+    """Finds and transitions stale running jobs to failed."""
+    try:
+        running_jobs = db.list_jobs(limit=1000, status="running")
+    except db.PersistenceError as e:
+        logger.error(f"Failed to list running jobs for stale recovery: {e}")
+        raise
+        
+    now = datetime.now(timezone.utc)
+    for job in running_jobs:
+        started_at_str = job.get("started_at")
+        if not started_at_str:
+            continue
+            
+        try:
+            started_at = datetime.fromisoformat(started_at_str)
+            age = (now - started_at).total_seconds()
+            
+            if age > RESEARCH_JOB_TIMEOUT_SECONDS:
+                logger.warning(f"Job {job['job_id']} is stale (age: {age}s). Transitioning to failed.")
+                db.update_job(
+                    job_id=job["job_id"],
+                    status="failed",
+                    error="Research job timed out before completion.",
+                    completed_at=now.isoformat()
+                )
+        except db.PersistenceError as e:
+            logger.error(f"Failed to transition stale job {job['job_id']}: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error processing stale job {job['job_id']}: {e}")

@@ -52,9 +52,8 @@ def mock_sec_data():
 @patch("services.research_pipeline.strategy_team")
 def test_pipeline_healthy_company(mock_strategy, mock_specialists, mock_news, mock_fin, mock_sec, mock_mkt, mock_market_data, mock_sec_data):
     # Setup mocks
-    mock_mkt.run.return_value = str(mock_market_data)
+    mock_mkt.fetch_data.return_value = mock_market_data
     mock_sec.get_financial_data.return_value = mock_sec_data
-    mock_fin._run.return_value = mock_market_data
     mock_news.run.return_value = "Mock News"
     
     # Mock specialist outputs
@@ -107,9 +106,8 @@ def test_pipeline_healthy_company(mock_strategy, mock_specialists, mock_news, mo
 @patch("services.research_pipeline.strategy_team")
 def test_pipeline_missing_sec_data(mock_strategy, mock_specialists, mock_news, mock_fin, mock_sec, mock_mkt, mock_market_data):
     # Setup mocks
-    mock_mkt.run.return_value = str(mock_market_data)
+    mock_mkt.fetch_data.return_value = mock_market_data
     mock_sec.get_financial_data.return_value = {"error": "Not found"}
-    mock_fin._run.return_value = mock_market_data
     mock_news.run.return_value = "Mock News"
     
     mock_specialists.return_value = {

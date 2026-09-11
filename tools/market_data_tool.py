@@ -59,88 +59,37 @@ class MarketDataTool(BaseTool):
     # TOOL EXECUTION
     # --------------------------------------------------------
 
-    def _run(self, ticker: str) -> str:
-
+    def fetch_data(self, ticker: str) -> dict:
         ticker = ticker.strip().upper()
 
         if not ticker:
-            return "Error: A valid ticker symbol is required."
+            return {"error": "Error: A valid ticker symbol is required."}
 
         try:
-
             stock = yf.Ticker(ticker)
-
             info = stock.info
             fast_info = stock.fast_info
 
             if not info:
-                return (
-                    f"No market information found for ticker {ticker}."
-                )
+                return {"error": f"No market information found for ticker {ticker}."}
 
-            # =================================================
-            # CURRENT MARKET DATA
-            # =================================================
+            current_price = safe_value(fast_info.get("lastPrice"))
+            previous_close = safe_value(info.get("previousClose"))
+            day_high = safe_value(info.get("dayHigh"))
+            day_low = safe_value(info.get("dayLow"))
+            week_52_high = safe_value(info.get("fiftyTwoWeekHigh"))
+            week_52_low = safe_value(info.get("fiftyTwoWeekLow"))
+            volume = safe_value(info.get("volume"))
+            average_volume = safe_value(info.get("averageVolume"))
+            market_cap = safe_value(info.get("marketCap"))
+            beta = safe_value(info.get("beta"))
+            dividend_yield = safe_value(info.get("dividendYield"))
 
-            current_price = safe_value(
-                fast_info.get("lastPrice")
-            )
-
-            previous_close = safe_value(
-                info.get("previousClose")
-            )
-
-            day_high = safe_value(
-                info.get("dayHigh")
-            )
-
-            day_low = safe_value(
-                info.get("dayLow")
-            )
-
-            week_52_high = safe_value(
-                info.get("fiftyTwoWeekHigh")
-            )
-
-            week_52_low = safe_value(
-                info.get("fiftyTwoWeekLow")
-            )
-
-            volume = safe_value(
-                info.get("volume")
-            )
-
-            average_volume = safe_value(
-                info.get("averageVolume")
-            )
-
-            market_cap = safe_value(
-                info.get("marketCap")
-            )
-
-            beta = safe_value(
-                info.get("beta")
-            )
-
-            dividend_yield = safe_value(
-                info.get("dividendYield")
-            )
-
-            # =================================================
-            # HISTORICAL PRICE DATA
-            # =================================================
-
-            history = stock.history(
-                period="1mo",
-                interval="1d"
-            )
-
+            history = stock.history(period="1mo", interval="1d")
             historical_data = []
 
             if history is not None and not history.empty:
-
                 for date, row in history.tail(10).iterrows():
-
                     historical_data.append({
                         "date": str(date.date()),
                         "open": safe_value(row.get("Open")),
@@ -150,20 +99,20 @@ class MarketDataTool(BaseTool):
                         "volume": safe_value(row.get("Volume"))
                     })
 
-            # =================================================
-            # RESULT
-            # =================================================
+            valuation_metrics = {
+                "Market Cap": safe_value(info.get("marketCap")),
+                "Trailing P/E": safe_value(info.get("trailingPE")),
+                "Forward P/E": safe_value(info.get("forwardPE")),
+                "Price To Sales": safe_value(info.get("priceToSalesTrailing12Months")),
+                "Price To Book": safe_value(info.get("priceToBook")),
+                "Enterprise Value": safe_value(info.get("enterpriseValue")),
+                "Enterprise To EBITDA": safe_value(info.get("enterpriseToEbitda"))
+            }
 
-            result = {
+            return {
                 "source": "Yahoo Finance via yfinance",
-
                 "ticker": ticker,
-
-                "company": (
-                    info.get("longName")
-                    or info.get("shortName")
-                ),
-
+                "company": info.get("longName") or info.get("shortName"),
                 "market_data": {
                     "current_price": current_price,
                     "previous_close": previous_close,
@@ -177,15 +126,15 @@ class MarketDataTool(BaseTool):
                     "beta": beta,
                     "dividend_yield": dividend_yield
                 },
-
+                "valuation_metrics": valuation_metrics,
                 "recent_history": historical_data
             }
 
-            return str(result)
-
         except Exception as e:
+            return {"error": f"Unable to retrieve market data for {ticker}. Error: {str(e)}"}
 
-            return (
-                f"Unable to retrieve market data for {ticker}. "
-                f"Error: {str(e)}"
-            )
+    def _run(self, ticker: str) -> str:
+        result = self.fetch_data(ticker)
+        if "error" in result:
+            return result["error"]
+        return str(result)

@@ -263,22 +263,22 @@ def build_financial_research_context(
     )
 
 
-def build_valuation_metrics_section(financial_data_result):
+def build_valuation_metrics_section(market_data_result):
     """
-    Format the FinancialDataTool valuation_metrics dict into a
+    Format the MarketDataTool valuation_metrics dict into a
     labelled context block for the research context.
 
-    financial_data_result is the raw dict returned by
-    financial_data_tool._run(ticker).
+    market_data_result is the raw dict returned by
+    market_data_tool.fetch_data(ticker).
     """
 
-    if not isinstance(financial_data_result, dict):
+    if not isinstance(market_data_result, dict):
         return (
             "\n\nMarket Valuation Metrics — Yahoo Finance via yfinance\n"
             "- Valuation metrics unavailable."
         )
 
-    vm = financial_data_result.get("valuation_metrics", {})
+    vm = market_data_result.get("valuation_metrics", {})
 
     def fmt_multiple(value, decimals=2):
         if value is None:
@@ -313,14 +313,14 @@ def build_combined_research_context(
     market_result,
     sec_result,
     calculated_metrics,
-    financial_data_result,
+    market_data_result,
     news_result,
     trends_result=None
 ):
     """
     Build the combined research context that all three specialist
     agents receive. Extends the financial context with the
-    FinancialDataTool valuation metrics and news data.
+    MarketDataTool valuation metrics and news data.
     """
 
     financial_context = build_financial_research_context(
@@ -332,7 +332,7 @@ def build_combined_research_context(
     )
 
     valuation_section = build_valuation_metrics_section(
-        financial_data_result
+        market_data_result
     )
 
     news_section = (
@@ -779,24 +779,17 @@ def prepare_financial_research(ticker):
     before sending the information to the LLM.
     """
 
-    market_data = market_data_tool.run(
-        ticker=ticker
-    )
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        future_market = executor.submit(market_data_tool.fetch_data, ticker)
+        future_sec = executor.submit(sec_financial_tool.get_financial_data, ticker)
+        future_news = executor.submit(news_data_tool.run, ticker=ticker, limit=3)
 
-    sec_data = sec_financial_tool.get_financial_data(
-        ticker=ticker
-    )
+        market_data_dict = future_market.result()
+        sec_data = future_sec.result()
+        news_data = future_news.result()
 
-    # Retrieve valuation metrics from Yahoo Finance via FinancialDataTool.
-    # Call _run() directly to obtain the raw dict before stringification.
-    financial_data = financial_data_tool._run(
-        ticker=ticker
-    )
-
-    news_data = news_data_tool.run(
-        ticker=ticker,
-        limit=3
-    )
+    market_data = str(market_data_dict) if "error" not in market_data_dict else market_data_dict["error"]
+    financial_data = market_data_dict
 
     normalized = sec_data.get(
         "financial_data",
@@ -842,7 +835,7 @@ def build_research_context_from_prepared(ticker, prepared):
         market_result=prepared["market_data"],
         sec_result=prepared["sec_data"],
         calculated_metrics=prepared["metrics"],
-        financial_data_result=prepared["financial_data"],
+        market_data_result=prepared["financial_data"],
         news_result=prepared["news_data"]
     )
 
